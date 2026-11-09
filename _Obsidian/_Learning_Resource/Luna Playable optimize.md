@@ -28,3 +28,5 @@ Note: each part can be improved further, this is not the final and hard rule to 
 - **Constraints**:
   - Sphere and Capsule colliders do not support non-uniform scaling via properties alone.
   - Ensure gameplay scripts reference the root Transform.
+
+##3 Set the compression texture to none
