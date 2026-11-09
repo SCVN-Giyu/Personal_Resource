@@ -15,6 +15,8 @@ Follow these branches based on what phase of work is happening right now:
    - *Triggers:* Modifying existing files, refactoring C#/TS/JS symbols, looking up unfamiliar library APIs, or verifying compiler diagnostics.
 3. **Adversarial Stress-Testing & Error Recovery** → Read [Workflow/Adversarial_And_Chaos.md](Workflow/Adversarial_And_Chaos.md)
    - *Triggers:* Finishing a non-trivial feature/decision, fixing a bug, or when the user says *"doubt this"* / *"chaos test"*.
+4. **Visual Learning & Pipeline Inspection** → Read [visual-compiler](../Agent_Skills/gemini/visual-compiler/SKILL.md)
+   - *Triggers:* When the user wants to learn an algorithm/solver/system visually, inspect how an object or memory buffer transforms step-by-step across a pipeline, or says *"visualize this"* / *"visual compiler"*.
 
 ---
 
