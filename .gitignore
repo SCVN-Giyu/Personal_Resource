@@ -18,3 +18,8 @@ Desktop.ini
 # Local environment / secrets (if any)
 .env
 *.local
+*.orig
+*.rej
+.serena/
+Agent_Skills/gemini/synced/
+InterVi/
