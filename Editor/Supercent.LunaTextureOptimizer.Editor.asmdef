@@ -1,0 +1,7 @@
+{
+  "name": "Supercent.LunaTextureOptimizer.Editor",
+  "rootNamespace": "Supercent.LunaTextureOptimizer.Editor",
+  "includePlatforms": [
+    "Editor"
+  ]
+}

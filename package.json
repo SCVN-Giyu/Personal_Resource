@@ -1,0 +1,7 @@
+{
+  "name": "com.supercent.luna-texture-optimizer",
+  "version": "0.2.0",
+  "displayName": "Luna Optimizer",
+  "description": "Size tooling for Luna playables (Supercent > Luna Optimizer). Predicts each texture's and sound's exact size in the playable with Luna's own tools, tunes formats, sizes and bitrates and saves them as Luna overrides (undoable), previews textures and sounds, estimates the full playable size per scene without a build, shows what uses any asset and lets you exclude assets from the build after reviewing their uses. Needs Unity 2022.3+ and a Luna install referenced in Packages/manifest.json (verified with Luna 7.2.0).",
+  "unity": "2022.3"
+}
