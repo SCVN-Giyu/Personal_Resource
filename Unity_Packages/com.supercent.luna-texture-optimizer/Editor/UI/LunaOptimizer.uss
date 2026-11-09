@@ -1,0 +1,321 @@
+/* Luna Optimizer hub. Colours come from Unity's editor variables so light and dark skins both work. */
+
+.lo-header {
+    height: 26px;
+    align-items: center;
+    padding-left: 6px;
+    padding-right: 2px;
+}
+
+.lo-budget-label {
+    -unity-font-style: bold;
+    margin-right: 8px;
+}
+
+.lo-budget-bar {
+    width: 160px;
+    height: 8px;
+    border-radius: 4px;
+    background-color: rgba(128, 128, 128, 0.25);
+    overflow: hidden;
+}
+
+.lo-budget-fill {
+    height: 100%;
+    border-radius: 4px;
+    background-color: rgb(77, 179, 89);
+}
+
+.lo-budget-fill--warn {
+    background-color: rgb(242, 166, 26);
+}
+
+.lo-budget-fill--over {
+    background-color: rgb(217, 64, 51);
+}
+
+.lo-spacer {
+    flex-grow: 1;
+}
+
+.lo-pending {
+    color: var(--unity-colors-label-text-focus);
+    margin-right: 6px;
+    -unity-font-style: bold;
+}
+
+.lo-tabs {
+    flex-direction: row;
+    padding-left: 4px;
+    padding-top: 4px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--unity-colors-toolbar-border);
+}
+
+.lo-tab {
+    min-width: 90px;
+    height: 24px;
+    -unity-text-align: middle-center;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    margin-right: 2px;
+}
+
+.lo-tab:checked {
+    -unity-font-style: bold;
+}
+
+.lo-content {
+    flex-grow: 1;
+}
+
+/* ---------------------------------------------------------------- tabs in UI Toolkit */
+
+.lo-tab-root {
+    flex-grow: 1;
+}
+
+.lo-search {
+    width: 240px;
+}
+
+.lo-summary {
+    margin: 3px 6px 0 6px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    white-space: normal;
+}
+
+.lo-warning {
+    color: rgb(242, 153, 26);
+}
+
+.lo-bulkbar {
+    flex-direction: row;
+    align-items: center;
+    margin: 4px 4px 4px 6px;
+}
+
+.lo-bulk-all {
+    margin-right: 8px;
+}
+
+.lo-bulk-count {
+    min-width: 90px;
+    -unity-text-align: middle-left;
+}
+
+.lo-bulk-field {
+    width: 150px;
+    margin-right: 4px;
+}
+
+.lo-split {
+    flex-grow: 1;
+}
+
+.lo-table {
+    flex-grow: 1;
+}
+
+.lo-cell {
+    flex-grow: 1;
+    justify-content: center;
+    padding-left: 4px;
+    padding-right: 4px;
+    overflow: hidden;
+}
+
+.lo-cell > Label {
+    -unity-text-align: middle-left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lo-right > Label {
+    -unity-text-align: middle-right;
+}
+
+.lo-cell > DropdownField {
+    margin: 0;
+}
+
+.lo-pending-cell {
+    color: rgb(77, 166, 255);
+    -unity-font-style: bold;
+}
+
+.lo-details {
+    padding: 6px 8px;
+    min-width: 260px;
+}
+
+.lo-details-title {
+    font-size: 14px;
+    -unity-font-style: bold;
+}
+
+.lo-preview {
+    margin-top: 6px;
+    margin-bottom: 4px;
+    border-width: 1px;
+    border-color: var(--unity-colors-default-border);
+}
+
+.lo-section-title {
+    -unity-font-style: bold;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--unity-colors-default-border);
+}
+
+.lo-info-row {
+    flex-direction: row;
+    margin-top: 1px;
+}
+
+.lo-info-key {
+    width: 90px;
+    color: var(--unity-colors-label-text);
+    opacity: 0.7;
+}
+
+.lo-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.lo-small {
+    font-size: 10px;
+    white-space: normal;
+}
+
+.lo-bold {
+    -unity-font-style: bold;
+}
+
+.lo-link {
+    color: rgb(115, 179, 255);
+    cursor: link;
+}
+
+.lo-link:hover {
+    -unity-font-style: bold;
+}
+
+.lo-empty {
+    white-space: normal;
+    opacity: 0.7;
+    margin-top: 20px;
+    -unity-text-align: middle-center;
+}
+
+.lo-details-button {
+    margin-top: 12px;
+    height: 24px;
+}
+
+.lo-banner {
+    flex-direction: row;
+    align-items: stretch;
+    margin: 2px 4px 0 4px;
+}
+
+.lo-banner-box {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.lo-banner-button {
+    width: 80px;
+}
+
+.lo-wave-row {
+    margin-top: 4px;
+}
+
+.lo-wave {
+    height: 64px;
+    margin-top: 2px;
+    border-width: 1px;
+    border-color: var(--unity-colors-default-border);
+    background-color: rgba(0, 0, 0, 0.18);
+    -unity-background-scale-mode: stretch-to-fill;
+    justify-content: center;
+    padding-left: 6px;
+}
+
+.lo-small-button {
+    height: 20px;
+    align-self: flex-start;
+    margin-top: 4px;
+}
+
+.lo-toolbar-field {
+    width: 170px;
+    margin-top: 1px;
+    margin-bottom: 1px;
+}
+
+.lo-excluding {
+    opacity: 0.55;
+    -unity-font-style: italic;
+}
+
+/* Light editor skin: darker accents for contrast on a light background. */
+.lo-light .lo-link {
+    color: rgb(26, 89, 204);
+}
+
+.lo-light .lo-pending-cell {
+    color: rgb(20, 100, 210);
+}
+
+.lo-light .lo-warning {
+    color: rgb(184, 104, 0);
+}
+
+.lo-light .lo-wave {
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.lo-scene-field {
+    width: 260px;
+    margin-right: 2px;
+}
+
+.lo-scene-field > Label {
+    min-width: 40px;
+    -unity-font-style: bold;
+}
+
+.lo-stale {
+    color: rgb(242, 166, 26);
+    margin-left: 6px;
+    margin-right: 10px;
+    -unity-font-style: bold;
+}
+
+.lo-light .lo-stale {
+    color: rgb(184, 104, 0);
+}
+
+.lo-quality-field {
+    width: 86px;
+    margin-left: 4px;
+    margin-right: 2px;
+    align-self: center;
+}
+
+.lo-quality-field > .unity-base-field__label {
+    min-width: 0;
+    width: auto;
+    margin-right: 3px;
+    padding-top: 1px;
+}
+
+.lo-quality-field > .unity-base-field__input {
+    min-width: 30px;
+}
