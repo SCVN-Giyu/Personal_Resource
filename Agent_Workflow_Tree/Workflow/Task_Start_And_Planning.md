@@ -6,9 +6,8 @@
 
 - **MCP Tool:** `agentmemory` (`memory_recall` or `memory_smart_search`)
 - **Action:** Query past decisions, architectural agreements, and recent fixes for the current project before asking the user to repeat context.
-- **Feature Docs:** If the project tracks features in `Docs/` or `WorkLog`, check:
-  - [worklog](../../Agent_Skills/gemini/worklog/SKILL.md) — when resuming or slicing a PM checklist into gradual steps.
-  - [feature-context](../../Agent_Skills/gemini/feature-context/SKILL.md) — when restoring or updating living feature docs.
+- **Feature Docs:** If the project tracks features in `Docs/Specs/` or `Docs/WorkLogs/`, check:
+  - [worklog](../../Agent_Skills/gemini/worklog/SKILL.md) — when resuming, updating, or slicing a PM checklist into gradual Tree + Key-Value nodes.
 
 ## 2. Step-by-Step Reasoning for Local / Non-Thinking Models
 

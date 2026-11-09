@@ -5,8 +5,9 @@
 ## 1. Zero-Hallucination API Lookup (Before Writing Unfamiliar Code)
 
 - **MCP Tool:** `context7` (`resolve-library-id` → `get-library-docs`)
-- **Auto-Trigger:** Whenever calling an unfamiliar third-party library, newer Unity package, Alchemy attribute, or framework API.
-- **Action:** Fetch the exact version-specific documentation rather than guessing method signatures or overloads from model weights.
+- **Skill Leaf:** [source-driven-development](../../Agent_Skills/gemini/source-driven-development/SKILL.md)
+- **Auto-Trigger:** Whenever calling an unfamiliar third-party library, newer Unity package, Luna SDK surface, Alchemy attribute, or framework API.
+- **Action:** Fetch the exact version-specific documentation or inspect the actual installed SDK/source declaration rather than guessing method signatures or overloads from model weights.
 
 ## 2. Semantic Navigation & Surgical Editing (Instead of Raw Text Grep)
 

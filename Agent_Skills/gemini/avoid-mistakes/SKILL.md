@@ -92,10 +92,12 @@ Present a concise summary card of the recorded entry (`❌ Avoid` vs `✅ Use In
 
 ---
 
-## 4. Audit Workflow (Pre-Flight Verification)
+## 4. Audit Workflow (Pre-Flight & Post-Edit Verification with `roslyn-mcp`)
 
-Before writing code or performing complex refactors in a specific stack:
+Before writing code or after performing edits/refactors in a specific stack:
 1. Check the project's linked avoid files or `references/INDEX.md`.
-2. Load the relevant domain file (e.g. `unity.md` and `playable-luna.md`).
-3. Verify the proposed implementation against all `❌ Avoid` rules.
-4. If a conflict is found, self-correct before presenting the solution to the user.
+2. Load only the relevant domain files for the active project (e.g. `unity.md` for standalone Unity; `unity.md` + `playable-luna.md` for Playable Luna; skip both in non-Unity projects).
+3. **For C# / Unity Projects (`roslyn-mcp` + `serena` Gate):**
+   - Use `roslyn-mcp` (`~/.dotnet/tools/roslyn-mcp`) for solution-wide C# compiler diagnostics, type checking, interface extraction/implementation, and complexity/dead-code checks.
+   - Then audit the modified code against all `❌ Avoid` rules in the active domain markdown files (catching valid-C# runtime traps like `?.` on `UnityEngine.Object`, `GetComponent` in hot loops, or Luna JS adapter gaps).
+4. If a conflict or compiler diagnostic is found, self-correct before presenting the solution to the user.

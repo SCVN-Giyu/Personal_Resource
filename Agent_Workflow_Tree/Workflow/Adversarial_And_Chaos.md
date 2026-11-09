@@ -20,8 +20,9 @@ Before a non-trivial implementation, state machine, or bug fix stands, subject i
   - Read [doubt-driven-development](../../Agent_Skills/gemini/doubt-driven-development/SKILL.md).
   - Isolate `ARTIFACT + CONTRACT` (without passing your `CLAIM` or justification) and run an adversarial review to expose unstated assumptions, race conditions, and edge cases.
 
-## 2. Pain-to-Immunity Loop (Auto-Trigger: Whenever a Bug, Pitfall, or User Correction Occurs)
+## 2. Systematic Bug Triage & Pain-to-Immunity Loop (Auto-Trigger: Whenever a Bug, Pitfall, or User Correction Occurs)
 
+- **Root-Cause Debugging:** Read [debugging-and-error-recovery](../../Agent_Skills/gemini/debugging-and-error-recovery/SKILL.md) when diagnosing failures or test/build errors so you trace the root cause instead of layering speculative fixes onto symptoms.
 - **Skill Leaf:** [avoid-mistakes](../../Agent_Skills/gemini/avoid-mistakes/SKILL.md)
 - **MCP Tool:** `agentmemory` (`memory_save`)
 - **Action:**
