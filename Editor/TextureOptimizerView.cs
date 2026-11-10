@@ -18,7 +18,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
         const int MIN_MAX_SIZE = 32;
         const int FULL_SIZE = 0;    // bulk max size: each texture's own largest side
         static readonly int[] BULK_MAX_SIZES = { FULL_SIZE, 2048, 1024, 512, 256, 128, 64, 32 };
-        const float ROW_HEIGHT = 22f;
+        const float ROW_HEIGHT = 24f;
         const float DETAILS_WIDTH = 420f;
         const float PREVIEW_HEIGHT = 300f;
         const string KEEP_FORMAT = "Format: keep";
@@ -35,9 +35,6 @@ namespace Supercent.LunaTextureOptimizer.Editor
             Pick,
             Name,
             FileSize,
-            Dimensions,
-            Alpha,
-            Type,
             UnityCompression,
             LunaRule,
             MaxSize,
@@ -112,6 +109,12 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
         // UI Toolkit elements, rebuilt by CreateUI after every reload.
         MultiColumnListView table;
+        VisualElement statStrip;
+        VisualElement bulkBar;
+        VisualElement bulkEdit;
+        Label bulkHint;
+        SearchBar searchBar;
+        double largestPredicted;
         Label summaryLabel;
         Label warningLabel;
         Toggle allShownToggle;
@@ -123,8 +126,9 @@ namespace Supercent.LunaTextureOptimizer.Editor
         Button untickButton;
         ToolbarButton predictButton;
         ToolbarButton pickSmallestButton;
-        ToolbarButton optimizeButton;
-        ToolbarButton restoreButton;
+        ToolbarMenu sourcesMenu;
+        IntegerField webpField;
+        IntegerField jpegField;
         VisualElement details;
         IMGUIContainer previewContainer;
 
@@ -271,20 +275,25 @@ namespace Supercent.LunaTextureOptimizer.Editor
             root.AddToClassList("lo-tab-root");
             root.Add(CreateToolbar());
 
+            statStrip = OptimizerUI.StatStrip();
+            root.Add(statStrip);
             summaryLabel = new Label();
             summaryLabel.AddToClassList("lo-summary");
+            summaryLabel.AddToClassList("lo-warning");
             root.Add(summaryLabel);
             warningLabel = new Label();
             warningLabel.AddToClassList("lo-warning");
             warningLabel.AddToClassList("lo-summary");
             root.Add(warningLabel);
             root.Add(CreateBulkBar());
+            searchBar.RegisterShortcut(root);
 
             var split = new TwoPaneSplitView(1, DETAILS_WIDTH, TwoPaneSplitViewOrientation.Horizontal) { viewDataKey = "lo-textures-split" };
             split.AddToClassList("lo-split");
             split.Add(CreateTable());
             details = new ScrollView();
             details.AddToClassList("lo-details");
+            details.contentContainer.AddToClassList("lo-details-content");
             split.Add(details);
             root.Add(split);
 
@@ -295,29 +304,30 @@ namespace Supercent.LunaTextureOptimizer.Editor
         VisualElement CreateToolbar()
         {
             var toolbar = new Toolbar();
-            toolbar.Add(new ToolbarButton(Refresh) { text = "Refresh", tooltip = "Scan again: textures, Luna settings and the last build." });
+            toolbar.AddToClassList("lo-tab-toolbar");
+            toolbar.Add(OptimizerUI.IconButton("d_Refresh", "Refresh", "Scan again: textures, Luna settings and the last build.", Refresh));
             predictButton = new ToolbarButton(PredictMissing) { text = "Predict", tooltip = "Run Luna's texture pipeline locally for textures without an up-to-date prediction." };
             toolbar.Add(predictButton);
-            pickSmallestButton = new ToolbarButton(PickSmallestFormats) { text = "Pick smallest format", tooltip = "Predict PNG, WebP and (without alpha) JPEG at the WebP/JPEG quality set next to it for the listed textures and select the smallest. Nothing is saved." };
+            toolbar.Add(new ToolbarSpacer());
+            pickSmallestButton = new ToolbarButton(() => PickSmallestFormats(visibleEntries)) { text = "Pick smallest format", tooltip = "Predict PNG, WebP and (without alpha) JPEG at the WebP/JPEG quality set next to it for the listed textures and select the smallest. Nothing is saved." };
             toolbar.Add(pickSmallestButton);
-            toolbar.Add(QualityField("WebP q", webpQuality, WEBP_QUALITY_PREF, q => webpQuality = q));
-            toolbar.Add(QualityField("JPEG q", jpegQuality, JPEG_QUALITY_PREF, q => jpegQuality = q));
-            optimizeButton = new ToolbarButton(OptimizeSources) { text = "Optimize sources…", tooltip = "Compress the listed PNG sources in place where it makes Luna's output smaller." };
-            toolbar.Add(optimizeButton);
-            restoreButton = new ToolbarButton(RestoreOriginals) { text = "Restore originals", tooltip = "Put back every source file and import setting the optimizer changed." };
-            toolbar.Add(restoreButton);
-            var spacer = new VisualElement();
-            spacer.AddToClassList("lo-spacer");
-            toolbar.Add(spacer);
-            var search = new ToolbarSearchField { value = searchText };
-            search.AddToClassList("lo-search");
-            search.RegisterValueChangedCallback(change =>
-            {
-                searchText = change.newValue ?? string.Empty;
-                ApplySortAndFilter();
-            });
-            toolbar.Add(search);
+            webpField = QualityField("WebP q", webpQuality, WEBP_QUALITY_PREF, q => webpQuality = q);
+            toolbar.Add(webpField);
+            jpegField = QualityField("JPEG q", jpegQuality, JPEG_QUALITY_PREF, q => jpegQuality = q);
+            toolbar.Add(jpegField);
+            toolbar.Add(new ToolbarSpacer());
+            sourcesMenu = new ToolbarMenu { text = "Source files", tooltip = "Change the PNG files themselves (backed up first)." };
+            sourcesMenu.menu.AppendAction("Optimize sources…", _ => EditorApplication.delayCall += OptimizeSources, _ => CanOptimizeSources
+                ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+            sourcesMenu.menu.AppendAction("Restore originals…", _ => EditorApplication.delayCall += RestoreOriginals,
+                _ => projectRoot != null && SourceOptimizer.HasBackups(projectRoot) ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+            toolbar.Add(sourcesMenu);
             return toolbar;
+        }
+
+        bool CanOptimizeSources
+        {
+            get { return install != null && PendingCount == 0 && visibleEntries.Any(SourceOptimizer.CanOptimize); }
         }
 
         // Quality (1-100) used when a texture is switched to WebP or JPEG here; remembered across sessions.
@@ -353,8 +363,19 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             var bar = new VisualElement();
             bar.AddToClassList("lo-bulkbar");
-            allShownToggle = new Toggle("All shown") { tooltip = "Tick or untick every texture the search shows." };
-            allShownToggle.AddToClassList("lo-bulk-all");
+            bulkBar = bar;
+            searchBar = new SearchBar(searchText, "Search textures by name or path   (Ctrl/Cmd+F)", value =>
+            {
+                searchText = value;
+                ApplySortAndFilter();
+            });
+            bar.Add(searchBar);
+            var gap = new VisualElement();
+            gap.AddToClassList("lo-spacer");
+            bar.Add(gap);
+            // Lives in the tick column's header (see CreateTable).
+            allShownToggle = new Toggle { tooltip = "Tick or untick every texture the search shows." };
+            allShownToggle.AddToClassList("lo-header-toggle");
             allShownToggle.RegisterValueChangedCallback(change =>
             {
                 foreach (var entry in visibleEntries)
@@ -366,18 +387,24 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 }
                 RefreshUI();
             });
-            bar.Add(allShownToggle);
             tickedLabel = new Label();
             tickedLabel.AddToClassList("lo-bulk-count");
             bar.Add(tickedLabel);
+            bulkHint = new Label("Tick textures to change their format or size together.");
+            bulkHint.AddToClassList("lo-muted");
+            bulkHint.AddToClassList("lo-bulk-hint");
+            bar.Add(bulkHint);
+            bulkEdit = new VisualElement();
+            bulkEdit.AddToClassList("lo-bulk-edit");
+            bar.Add(bulkEdit);
             bulkFormatField = new DropdownField(BulkFormatChoices(), 0);
             bulkFormatField.AddToClassList("lo-bulk-field");
             bulkFormatField.RegisterValueChangedCallback(_ => RefreshBulkBar());
-            bar.Add(bulkFormatField);
+            bulkEdit.Add(bulkFormatField);
             bulkSizeField = new DropdownField(new[] { KEEP_SIZE }.Concat(BULK_MAX_SIZES.Select(m => m == FULL_SIZE ? "Full size" : "Max " + m)).ToList(), 0);
             bulkSizeField.AddToClassList("lo-bulk-field");
             bulkSizeField.RegisterValueChangedCallback(_ => RefreshBulkBar());
-            bar.Add(bulkSizeField);
+            bulkEdit.Add(bulkSizeField);
             bulkApplyButton = new Button(() =>
             {
                 var targets = TickedVisible();
@@ -387,13 +414,14 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 var maxSize = sizeIndex >= 0 ? BULK_MAX_SIZES[sizeIndex] : -1;
                 EditorApplication.delayCall += () => ApplyBulk(targets, option, maxSize);
             }) { tooltip = "Change the ticked textures; nothing is written until Save all." };
-            bar.Add(bulkApplyButton);
+            bulkApplyButton.AddToClassList("lo-primary");
+            bulkEdit.Add(bulkApplyButton);
             untickButton = new Button(() =>
             {
                 ticked.Clear();
                 RefreshUI();
-            }) { text = "Untick all" };
-            bar.Add(untickButton);
+            }) { text = "Clear" };
+            bulkEdit.Add(untickButton);
             return bar;
         }
 
@@ -429,9 +457,6 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 label.EnableInClassList("lo-excluding", queued);
             }, null);
             AddLabelColumn(Column.FileSize, "File", 70f, true, e => FormatBytes(e.FileBytes), null);
-            AddLabelColumn(Column.Dimensions, "Source px", 80f, true, e => e.Width + "×" + e.Height, null);
-            AddLabelColumn(Column.Alpha, "Alpha", 48f, false, e => e.HasAlpha ? "yes" : "no", null);
-            AddLabelColumn(Column.Type, "Type", 70f, false, e => e.TextureType.ToString(), null);
             AddLabelColumn(Column.UnityCompression, "Unity compression", 120f, false,
                 e => e.UnityCompression + (e.HasPlatformOverride ? " (platform)" : string.Empty),
                 e => e.UnityCompressionAffectsLuna ? "Luna re-encodes this texture from Unity's compressed import." : null,
@@ -440,7 +465,11 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 element => ((DropdownField)element).RegisterValueChangedCallback(change => OnFormatPicked((DropdownField)element, change.newValue)));
             AddColumn(Column.MaxSize, "Max size", 140f, true, () => new DropdownField(), (element, entry) => BindSizeField((DropdownField)element, entry),
                 element => ((DropdownField)element).RegisterValueChangedCallback(change => OnSizePicked((DropdownField)element, change.newValue)));
-            AddColumn(Column.Predicted, "Predicted", 90f, true, () => new Label(), (element, entry) => BindPrediction((Label)element, entry), null);
+            AddColumn(Column.Predicted, "Predicted", 130f, true, OptimizerUI.SizeCell, (element, entry) =>
+            {
+                BindPrediction((Label)element[1], entry);
+                OptimizerUI.SetHeat(element, PredictedBytes(entry), largestPredicted);
+            }, null);
             AddLabelColumn(Column.LastBuild, "Last build", 90f, true,
                 e => e.HasLastBuild ? FormatBytes(e.LastBuildBytes) + (e.LastBuildOutdated ? " (old)" : string.Empty) : "–",
                 e => e.LastBuildOutdated ? "The texture changed after the last Luna build." : null);
@@ -469,6 +498,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
             table.columns.Add(new UnityEngine.UIElements.Column
             {
                 name = column.ToString(),
+                makeHeader = column == Column.Pick ? () => allShownToggle : (Func<VisualElement>)null,
                 title = title,
                 width = width,
                 minWidth = Mathf.Min(width, 40f),
@@ -627,6 +657,8 @@ namespace Supercent.LunaTextureOptimizer.Editor
             var tooltip = "Luna output: " + prediction.outputExtension + ", " + FormatBytes(prediction.outputBytes) + " file\n"
                 + "Luna input: " + (prediction.usedSourceFile ? "your source file" : "Unity's imported texture") + ", " + FormatBytes(prediction.inputBytes);
             label.text = FormatBytes(prediction.PlayableBytes);
+            if (entry.HasPendingChange && entry.PendingFromBytes >= 0)
+                label.text += "  " + FormatDelta(prediction.PlayableBytes - entry.PendingFromBytes);
             if (entry.HasPendingChange)
             {
                 tooltip = "Unsaved change" + (entry.PendingFromBytes >= 0 ? ", was " + FormatBytes(entry.PendingFromBytes) : string.Empty) + "\n" + tooltip;
@@ -645,6 +677,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             if (table == null)
                 return;
+            largestPredicted = visibleEntries.Count > 0 ? visibleEntries.Max(e => PredictedBytes(e)) : 0;
             table.itemsSource = visibleEntries;
             table.RefreshItems();
             var index = selectedPath != null ? visibleEntries.FindIndex(e => e.AssetPath == selectedPath) : -1;
@@ -653,39 +686,59 @@ namespace Supercent.LunaTextureOptimizer.Editor
             else
                 table.ClearSelection();
 
-            var summary = entries.Count + " textures  ·  source files " + FormatBytes(entries.Sum(e => e.FileBytes));
-            var predicted = entries.Where(e => e.HasPrediction).ToList();
-            if (predicted.Count > 0)
-                summary += "  ·  predicted " + FormatBytes(predicted.Sum(e => e.Prediction.PlayableBytes)) + " in playable"
-                    + (predicted.Count < entries.Count ? " (" + predicted.Count + "/" + entries.Count + ")" : string.Empty);
-            if (stats != null)
-                summary += "  ·  last build " + FormatBytes(entries.Where(e => e.HasLastBuild).Sum(e => e.LastBuildBytes))
-                    + " in playable (" + stats.BuiltAt.ToString("yyyy-MM-dd HH:mm") + ")";
-            if (settings == null)
-                summary = LunaSettings.FILE_NAME + " not found in the project root. Open the Luna window once to create it.";
-            else if (install == null)
-                summary += "  ·  no Luna install found, so sizes cannot be predicted";
-            summaryLabel.text = summary + OptimizerUI.ExcludedNote(settings);
+            RefreshStats();
             var affected = entries.Count(e => e.UnityCompressionAffectsLuna);
-            warningLabel.text = affected + " textures reach Luna through Unity's compressed import (orange). Setting their Unity Compression to None usually makes Luna's output smaller.";
+            warningLabel.text = "⚠  " + affected + " textures reach Luna through Unity's compressed import (orange). Setting their Unity Compression to None usually makes Luna's output smaller.";
             warningLabel.style.display = affected > 0 ? DisplayStyle.Flex : DisplayStyle.None;
 
             predictButton.SetEnabled(install != null && entries.Any(e => e.Prediction == null));
             pickSmallestButton.SetEnabled(install != null && visibleEntries.Count > 0);
-            optimizeButton.SetEnabled(install != null && PendingCount == 0 && visibleEntries.Any(SourceOptimizer.CanOptimize));
-            restoreButton.SetEnabled(projectRoot != null && SourceOptimizer.HasBackups(projectRoot));
             RefreshBulkBar();
             RefreshDetails();
+        }
+
+        void RefreshStats()
+        {
+            statStrip.Clear();
+            string problem = null;
+            if (settings == null)
+                problem = LunaSettings.FILE_NAME + " not found in the project root. Open the Luna window once to create it.";
+            else if (install == null)
+                problem = "No Luna install found, so sizes cannot be predicted.";
+            summaryLabel.text = problem ?? string.Empty;
+            summaryLabel.style.display = problem != null ? DisplayStyle.Flex : DisplayStyle.None;
+            if (settings == null)
+                return;
+
+            OptimizerUI.AddStat(statStrip, entries.Count.ToString(), "textures");
+            OptimizerUI.AddStat(statStrip, FormatBytes(entries.Sum(e => e.FileBytes)), "source files");
+            var predicted = entries.Where(e => e.HasPrediction).ToList();
+            if (predicted.Count > 0)
+                OptimizerUI.AddStat(statStrip, FormatBytes(predicted.Sum(e => e.Prediction.PlayableBytes)),
+                    "predicted in playable" + (predicted.Count < entries.Count ? " (" + predicted.Count + "/" + entries.Count + ")" : string.Empty),
+                    "What Luna would ship for these textures with the current (unsaved included) settings.", "lo-stat--key");
+            if (PendingCount > 0)
+                OptimizerUI.AddStat(statStrip, OptimizerUI.Delta(-PendingSavingBytes), PendingCount + " unsaved", "Predicted change once saved.", "lo-stat--accent");
+            if (stats != null)
+                OptimizerUI.AddStat(statStrip, FormatBytes(entries.Where(e => e.HasLastBuild).Sum(e => e.LastBuildBytes)), "last build",
+                    "Built " + stats.BuiltAt.ToString("yyyy-MM-dd HH:mm"));
+            var excluded = OptimizerUI.ExcludedCount(settings);
+            if (excluded > 0)
+                OptimizerUI.AddStat(statStrip, excluded.ToString(), "excluded", "Excluded assets/folders are not listed: see Exclusions.");
         }
 
         void RefreshBulkBar()
         {
             if (tickedLabel == null)
                 return;
+            searchBar.SetCount(visibleEntries.Count, entries.Count);
             var targets = TickedVisible();
             var hidden = ticked.Count - targets.Count;
             allShownToggle.SetValueWithoutNotify(visibleEntries.Count > 0 && targets.Count == visibleEntries.Count);
-            tickedLabel.text = targets.Count + " ticked" + (hidden > 0 ? " (+" + hidden + " hidden)" : string.Empty);
+            tickedLabel.text = targets.Count > 0 ? targets.Count + " selected" + (hidden > 0 ? " (+" + hidden + " hidden)" : string.Empty) : string.Empty;
+            bulkBar.EnableInClassList("lo-bulkbar--active", targets.Count > 0);
+            bulkEdit.style.display = targets.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            bulkHint.style.display = targets.Count > 0 ? DisplayStyle.None : DisplayStyle.Flex;
             tickedLabel.tooltip = hidden > 0 ? "Ticked textures the search hides are not changed." : null;
             var anyChange = bulkFormatField.value != KEEP_FORMAT || bulkSizeField.value != KEEP_SIZE;
             bulkApplyButton.text = "Apply to " + targets.Count;
@@ -714,10 +767,18 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 return;
             }
 
-            var title = new Label(entry.FileName);
-            title.AddToClassList("lo-details-title");
-            details.Add(title);
-            details.Add(OptimizerUI.LinkLabel(entry.AssetPath, entry.AssetPath, "lo-small"));
+            var badges = new List<Label>
+            {
+                entry.IsLunaOverride ? OptimizerUI.Badge("Override", null, "Per-texture override in Luna") : OptimizerUI.Badge("Default rule", null, "Uses Luna's default texture rule"),
+                OptimizerUI.Badge(entry.LunaOutputFormat.ToUpperInvariant(), null, "Format Luna ships"),
+            };
+            if (entry.HasPendingChange)
+                badges.Add(OptimizerUI.Badge("Unsaved", "accent"));
+            if (entry.UnityCompressionAffectsLuna)
+                badges.Add(OptimizerUI.Badge("Compressed import", "warn", "Luna re-encodes this texture from Unity's compressed import."));
+            if (ExclusionQueue.IsQueued(entry.AssetPath))
+                badges.Add(OptimizerUI.Badge("Excluding", "warn", "Waiting in the Luna Exclusions window (Pending)."));
+            details.Add(OptimizerUI.DetailsHeader(entry.FileName, entry.AssetPath, badges));
 
             previewContainer = new IMGUIContainer(() =>
             {
@@ -727,6 +788,12 @@ namespace Supercent.LunaTextureOptimizer.Editor
             previewContainer.AddToClassList("lo-preview");
             previewContainer.style.height = PREVIEW_HEIGHT;
             details.Add(previewContainer);
+
+            var shown = entry.Prediction;
+            if (shown != null && shown.success)
+                details.Add(OptimizerUI.Metric(FormatBytes(shown.PlayableBytes), "in playable",
+                    entry.HasPendingChange && entry.PendingFromBytes >= 0 ? FormatDelta(shown.PlayableBytes - entry.PendingFromBytes) + " unsaved" : null,
+                    shown.PlayableBytes <= entry.PendingFromBytes));
 
             details.Add(OptimizerUI.SectionTitle("Luna settings"));
             var format = new DropdownField("Format");
@@ -743,17 +810,18 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 details.Add(QualitySlider(entry));
 
             details.Add(OptimizerUI.SectionTitle("Size"));
-            details.Add(OptimizerUI.InfoRow("Source", entry.Width + "×" + entry.Height + " · " + FormatBytes(entry.FileBytes) + (entry.HasAlpha ? " · alpha" : string.Empty)));
-            details.Add(OptimizerUI.InfoRow("Unity import", entry.TextureType + " · " + entry.UnityCompression + (entry.HasPlatformOverride ? " (platform)" : string.Empty)));
+            details.Add(OptimizerUI.InfoRow("Source", entry.Width + "×" + entry.Height + " · " + FormatBytes(entry.FileBytes)));
+            var import = OptimizerUI.InfoRow("Unity import", entry.UnityCompression + (entry.HasPlatformOverride ? " (platform)" : string.Empty));
+            import.EnableInClassList("lo-warning", entry.UnityCompressionAffectsLuna);
+            import.tooltip = entry.UnityCompressionAffectsLuna ? "Luna re-encodes this texture from Unity's compressed import; Compression None usually makes Luna's output smaller." : null;
+            details.Add(import);
             var prediction = entry.Prediction;
             if (prediction != null && prediction.success)
             {
                 var output = entry.OutputSizeFor(entry.LunaRule.maxWidth, entry.LunaRule.maxHeight);
                 details.Add(OptimizerUI.InfoRow("Luna output", prediction.outputExtension.TrimStart('.') + " · " + FormatPixels(output) + " · " + FormatBytes(prediction.outputBytes) + " file"));
-                var playable = OptimizerUI.InfoRow("In playable", FormatBytes(prediction.PlayableBytes)
-                    + (entry.HasPendingChange && entry.PendingFromBytes >= 0 ? "   (was " + FormatBytes(entry.PendingFromBytes) + ", unsaved)" : string.Empty));
-                playable.EnableInClassList("lo-pending-cell", entry.HasPendingChange);
-                details.Add(playable);
+                if (entry.HasPendingChange && entry.PendingFromBytes >= 0)
+                    details.Add(OptimizerUI.InfoRow("Saved setting", FormatBytes(entry.PendingFromBytes) + " in playable"));
             }
             else
             {
@@ -764,9 +832,15 @@ namespace Supercent.LunaTextureOptimizer.Editor
             details.Add(OptimizerUI.SectionTitle("Used by"));
             details.Add(UsedBy(entry));
 
-            var exclude = new Button(() => LunaExclusionWindow.AddAndShow(new[] { entry.AssetPath })) { text = "Add to Luna Exclusions…", tooltip = "Review it in the Luna Exclusions window before anything is written." };
+            var actions = new VisualElement();
+            actions.AddToClassList("lo-details-actions");
+            var ping = new Button(() => OptimizerUI.Ping(entry.AssetPath)) { text = "Show in Project" };
+            ping.AddToClassList("lo-details-button");
+            actions.Add(ping);
+            var exclude = new Button(() => LunaExclusionWindow.AddAndShow(new[] { entry.AssetPath })) { text = "Exclude from build…", tooltip = "Review it in the Luna Exclusions window before anything is written." };
             exclude.AddToClassList("lo-details-button");
-            details.Add(exclude);
+            actions.Add(exclude);
+            details.Add(actions);
         }
 
         // WebP/JPEG quality of the selected texture. Predicted (and the preview re-rendered) once the value rests
@@ -881,6 +955,14 @@ namespace Supercent.LunaTextureOptimizer.Editor
         // maxSize: -1 keeps, FULL_SIZE uses each texture's largest side. JPEG skips textures with alpha.
         void ApplyBulk(List<TextureEntry> targets, FormatOption option, int maxSize)
         {
+            var note = ApplyBulkCore(targets, option, maxSize);
+            if (note != null)
+                EditorUtility.DisplayDialog("Apply to ticked textures", note, "OK");
+        }
+
+        // Returns what could not be applied (null when everything was).
+        string ApplyBulkCore(List<TextureEntry> targets, FormatOption option, int maxSize)
+        {
             var formatKept = new List<string>();
             ChangeRules(targets, (entry, rule) =>
             {
@@ -899,18 +981,21 @@ namespace Supercent.LunaTextureOptimizer.Editor
                     rule.maxHeight = size;
                 }
             });
-            if (formatKept.Count > 0)
-                EditorUtility.DisplayDialog("Apply to ticked textures", option.Label + " needs a texture without alpha; format kept for: "
-                    + LunaSaveHistory.Names(formatKept), "OK");
+            return formatKept.Count > 0
+                ? option.Label + " needs a texture without alpha; format kept for: " + LunaSaveHistory.Names(formatKept)
+                : null;
         }
 
-        // Predicts every allowed format for the listed textures in one parallel pass and selects the smallest;
-        // still only a preview.
-        void PickSmallestFormats()
+        // Predicts every allowed format for the targets in one parallel pass and selects the smallest;
+        // still only a preview. Returns how many textures changed format.
+        int PickSmallestFormats(List<TextureEntry> targets)
         {
+            if (install == null)
+                return 0;
+            targets = targets.ToList();
             var variants = new List<KeyValuePair<TextureEntry, FormatOption>>();
             var toPredict = new List<TextureEntry>();
-            foreach (var entry in visibleEntries)
+            foreach (var entry in targets)
             {
                 foreach (var option in FormatOptionsFor(entry))
                 {
@@ -934,7 +1019,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
             }
 
             var changed = 0;
-            foreach (var entry in visibleEntries.ToList())
+            foreach (var entry in targets)
             {
                 var best = variants.Where(v => v.Key.AssetPath == entry.AssetPath && v.Key.HasPrediction)
                     .OrderBy(v => v.Key.Prediction.PlayableBytes).Select(v => v.Value).FirstOrDefault();
@@ -947,6 +1032,233 @@ namespace Supercent.LunaTextureOptimizer.Editor
             cache.Save();
             ApplySortAndFilter();
             ShowNotification(new GUIContent(changed == 0 ? "Every listed texture already uses its smallest format" : changed + " format change(s) to review"));
+            return changed;
+        }
+
+        // ---------------------------------------------------------------- for the browser page (LunaOptimizerWebApi)
+
+        public LunaSettings Settings
+        {
+            get { return settings; }
+        }
+
+        public LunaInstall Install
+        {
+            get { return install; }
+        }
+
+        public bool HasBuildStats
+        {
+            get { return stats != null; }
+        }
+
+        public TextureEntry Find(string assetPath)
+        {
+            return entries.FirstOrDefault(e => e.AssetPath == assetPath);
+        }
+
+        // The format choices the row's dropdown shows, and which one is selected.
+        public List<string> FormatChoices(TextureEntry entry, out int selected)
+        {
+            var options = ShownOptionsFor(entry);
+            var labels = options.Select(o => o.LabelFor(entry)).ToList();
+            selected = options.FindIndex(o => o.Matches(entry.LunaRule));
+            if (selected < 0)
+            {
+                labels.Add(DescribeRule(entry));
+                selected = labels.Count - 1;
+            }
+            return labels;
+        }
+
+        public bool PickFormat(TextureEntry entry, string label)
+        {
+            var option = ShownOptionsFor(entry).FirstOrDefault(o => o.LabelFor(entry) == label);
+            if (option == null || option.Matches(entry.LunaRule))
+                return false;
+            SetFormat(entry, option);
+            return true;
+        }
+
+        public List<string> SizeLabels(TextureEntry entry, out int selected)
+        {
+            return SizeChoices(entry, out selected).Select(c => c.Value).ToList();
+        }
+
+        public bool PickSize(TextureEntry entry, string label)
+        {
+            int selected;
+            var choices = SizeChoices(entry, out selected);
+            var choice = choices.FirstOrDefault(c => c.Value == label);
+            if (choice.Value == null || choice.Key <= 0 || label == choices[selected].Value)
+                return false;
+            SetMaxSize(entry, choice.Key);
+            return true;
+        }
+
+        public void SetQuality(TextureEntry entry, int quality)
+        {
+            quality = Mathf.Clamp(quality, MIN_QUALITY, MAX_QUALITY);
+            if (entry.LunaOutputFormat != "png" && entry.LunaRule.quality != quality)
+                ChangeRule(entry, rule => rule.quality = quality);
+        }
+
+        public List<string> BulkFormatLabels()
+        {
+            return BulkFormatChoices();
+        }
+
+        public List<string> BulkSizeLabels()
+        {
+            return new[] { KEEP_SIZE }.Concat(BULK_MAX_SIZES.Select(m => m == FULL_SIZE ? "Full size" : "Max " + m)).ToList();
+        }
+
+        // Indices into BulkFormatLabels / BulkSizeLabels (0 = keep). Returns a note when something was kept.
+        public string ApplyBulk(IEnumerable<string> paths, int formatIndex, int sizeIndex)
+        {
+            var targets = paths.Select(Find).Where(e => e != null).ToList();
+            var option = formatIndex > 0 ? FormatOptions()[formatIndex - 1] : null;
+            var maxSize = sizeIndex > 0 ? BULK_MAX_SIZES[sizeIndex - 1] : -1;
+            if (targets.Count == 0 || (option == null && maxSize < 0))
+                return null;
+            return ApplyBulkCore(targets, option, maxSize);
+        }
+
+        public int PickSmallest(IEnumerable<string> paths)
+        {
+            return PickSmallestFormats(paths.Select(Find).Where(e => e != null).ToList());
+        }
+
+        // Luna's input and output for the entry's current rule as PNG files (rendered once, then cached on disk).
+        public bool RenderPreview(TextureEntry entry, out string inputPng, out string outputPng, out string error)
+        {
+            inputPng = outputPng = null;
+            if (install == null)
+            {
+                error = "No Luna install found, so Luna's output cannot be rendered.";
+                return false;
+            }
+            return LunaPipeline.RenderPreview(entry, install, projectRoot, PredictionCache.KeyFor(entry, projectRoot, install), out inputPng, out outputPng, out error);
+        }
+
+        public bool CanOptimizeSourcesNow
+        {
+            get { return install != null && PendingCount == 0 && entries.Any(SourceOptimizer.CanOptimize); }
+        }
+
+        public bool HasSourceBackups
+        {
+            get { return projectRoot != null && SourceOptimizer.HasBackups(projectRoot); }
+        }
+
+        // Both ask for confirmation in Unity (they change the source files).
+        public void OptimizeSourcesInUnity()
+        {
+            var shown = visibleEntries;
+            visibleEntries = entries;
+            try
+            {
+                OptimizeSources();
+            }
+            finally
+            {
+                visibleEntries = shown;
+                ApplySortAndFilter();
+            }
+        }
+
+        public void RestoreOriginalsInUnity()
+        {
+            RestoreOriginals();
+        }
+
+        public void Rescan()
+        {
+            Refresh();
+        }
+
+        // ---------------------------------------------------------------- for the hub's Simple mode
+
+        public int Count
+        {
+            get { return entries.Count; }
+        }
+
+        public int PredictedCount
+        {
+            get { return entries.Count(e => e.HasPrediction); }
+        }
+
+        public double PredictedTotalBytes
+        {
+            get { return entries.Where(e => e.HasPrediction).Sum(e => e.Prediction.PlayableBytes); }
+        }
+
+        // Predicted bytes the unsaved changes save (negative when they add).
+        public double PendingSavingBytes
+        {
+            get { return entries.Where(e => e.HasPendingChange && e.HasPrediction && e.PendingFromBytes >= 0).Sum(e => e.PendingFromBytes - e.Prediction.PlayableBytes); }
+        }
+
+        public IReadOnlyList<TextureEntry> Entries
+        {
+            get { return entries; }
+        }
+
+        public int UnityCompressedCount
+        {
+            get { return entries.Count(e => e.UnityCompressionAffectsLuna); }
+        }
+
+        public bool CanPredictSizes
+        {
+            get { return install != null && entries.Any(e => e.Prediction == null); }
+        }
+
+        public bool HasLunaInstall
+        {
+            get { return install != null; }
+        }
+
+        public void PredictAll()
+        {
+            if (install != null)
+                PredictMissing();
+        }
+
+        // Every texture at these WebP / JPEG qualities (remembered as the toolbar's qualities).
+        public int PickSmallestAll(int webp, int jpeg)
+        {
+            SetLossyQualities(webp, jpeg);
+            return PickSmallestFormats(entries);
+        }
+
+        public int WebpQuality
+        {
+            get { return webpQuality; }
+        }
+
+        public int JpegQuality
+        {
+            get { return jpegQuality; }
+        }
+
+        public void SetLossyQualities(int webp, int jpeg)
+        {
+            webpQuality = Mathf.Clamp(webp, MIN_QUALITY, MAX_QUALITY);
+            jpegQuality = Mathf.Clamp(jpeg, MIN_QUALITY, MAX_QUALITY);
+            EditorPrefs.SetInt(WEBP_QUALITY_PREF, webpQuality);
+            EditorPrefs.SetInt(JPEG_QUALITY_PREF, jpegQuality);
+            if (webpField != null)
+                webpField.SetValueWithoutNotify(webpQuality);
+            if (jpegField != null)
+                jpegField.SetValueWithoutNotify(jpegQuality);
+            if (bulkFormatField != null)
+            {
+                var index = bulkFormatField.index;
+                bulkFormatField.choices = BulkFormatChoices();
+                bulkFormatField.index = index;
+            }
         }
 
         double PredictedBytesFor(TextureEntry entry, LunaTextureRule rule)
@@ -1036,9 +1348,6 @@ namespace Supercent.LunaTextureOptimizer.Editor
             switch (column)
             {
                 case Column.FileSize: return (a, b) => a.FileBytes.CompareTo(b.FileBytes);
-                case Column.Dimensions: return (a, b) => (a.Width * a.Height).CompareTo(b.Width * b.Height);
-                case Column.Alpha: return (a, b) => a.HasAlpha.CompareTo(b.HasAlpha);
-                case Column.Type: return (a, b) => a.TextureType.CompareTo(b.TextureType);
                 case Column.UnityCompression: return (a, b) => a.UnityCompression.CompareTo(b.UnityCompression);
                 case Column.LunaRule: return (a, b) => string.CompareOrdinal(DescribeRule(a), DescribeRule(b));
                 case Column.MaxSize: return (a, b) => OutputPixels(a).CompareTo(OutputPixels(b));
@@ -1057,6 +1366,12 @@ namespace Supercent.LunaTextureOptimizer.Editor
         static double PredictedBytes(TextureEntry entry)
         {
             return entry.HasPrediction ? entry.Prediction.PlayableBytes : -1;
+        }
+
+        // "−1.2 KB" / "+0.4 KB": change against the saved rule.
+        static string FormatDelta(double bytes)
+        {
+            return (bytes <= 0 ? "−" : "+") + FormatBytes(Math.Abs(bytes));
         }
 
         static string FormatBytes(double bytes)

@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luna Optimizer</title>
+<style>
+  :root {
+    --bg: #15171c; --surface: #1d2026; --surface-2: #262a32; --surface-3: #2e333c; --border: #2f343d;
+    --text: #e7e9ee; --muted: #9aa1ad; --accent: #4c8dde; --accent-strong: #3a79bb; --accent-soft: rgba(76,141,222,.16);
+    --good: #4cb35c; --warn: #f2a61a; --bad: #e0544a;
+    --good-soft: rgba(76,179,92,.16); --warn-soft: rgba(242,166,26,.14); --bad-soft: rgba(224,84,74,.16);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.18); --radius: 12px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f7; --surface: #fff; --surface-2: #f0f2f5; --surface-3: #e6e9ee; --border: #e1e4ea; --text: #1b1f27; --muted: #5f6775;
+      --accent: #2f6fc0; --accent-strong: #285fa5; --accent-soft: rgba(47,111,192,.1); --shadow: 0 1px 2px rgba(16,24,40,.06), 0 6px 18px rgba(16,24,40,.06); }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  button, select, input { font: inherit; color: inherit; }
+  .num { font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); } .small { font-size: 12px; } .warn-text { color: var(--warn); } .bad-text { color: var(--bad); }
+  .spacer { flex: 1; }
+  [hidden] { display: none !important; }
+
+  /* Top bar + nav */
+  .topbar { position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+  .bar1 { display: flex; align-items: center; gap: 12px; padding: 10px 24px 6px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+  .logo { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #4c8dde, #7c5cff); display: grid; place-items: center; color: #fff; font-size: 14px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); font-size: 12px; border: 1px solid var(--border); white-space: nowrap; }
+  .chip.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+  .chip select { background: none; border: 0; outline: 0; padding: 0; cursor: pointer; font-weight: 600; }
+  .conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+  .dot.off { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+  nav.tabs { display: flex; gap: 2px; padding: 0 18px; overflow-x: auto; }
+  nav.tabs a { display: inline-flex; align-items: center; gap: 7px; padding: 9px 12px 10px; color: var(--muted); text-decoration: none; font-weight: 650; border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav.tabs a:hover { color: var(--text); }
+  nav.tabs a.on { color: var(--text); border-bottom-color: var(--accent); }
+
+  a.btn { color: inherit; text-decoration: none; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; font-weight: 600; font-size: 13px; white-space: nowrap; transition: background .15s, border-color .15s; }
+  .btn:hover { border-color: color-mix(in srgb, var(--text) 25%, var(--border)); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-strong); }
+  .btn.danger { color: var(--bad); }
+  .btn.ghost { background: transparent; }
+  .btn.sm { height: 26px; padding: 0 9px; font-size: 12px; border-radius: 7px; }
+  .btn.link { background: none; border: 0; color: var(--accent); padding: 0; height: auto; }
+  .btn[disabled] { opacity: .45; cursor: default; pointer-events: none; }
+  .btn.busy { pointer-events: none; opacity: .8; }
+  .btn.busy::before { content: ""; width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 650; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
+  .badge.accent { background: var(--accent); color: #fff; border-color: transparent; }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .badge.good { background: var(--good-soft); color: var(--good); border-color: transparent; }
+  select.sel, input.inp { height: 30px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-2); outline: 0; }
+  select.sel:focus, input.inp:focus { border-color: var(--accent); }
+  select.sel.sm, input.inp.sm { height: 26px; font-size: 12px; padding: 0 6px; }
+  input.inp.num { width: 64px; text-align: right; }
+  label.toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 13px; }
+  .switch { position: relative; width: 32px; height: 18px; border-radius: 999px; background: var(--surface-3); transition: background .15s; flex-shrink: 0; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  input:checked + .switch { background: var(--accent); }
+  input:checked + .switch::after { transform: translateX(14px); }
+  label.toggle input { display: none; }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 20px 24px 120px; }
+  .banner { margin-bottom: 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid transparent; display: flex; gap: 12px; align-items: center; }
+  .banner.bad { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+  .banner.warn { background: var(--warn-soft); color: var(--text); }
+  .banner.info { background: var(--accent-soft); }
+  .grid { display: grid; gap: 16px; }
+  .home-grid { grid-template-columns: 1.15fr 1fr 1fr; }
+  @media (max-width: 1100px) { .home-grid { grid-template-columns: 1fr 1fr; } .size-card { grid-column: 1 / -1; } }
+  @media (max-width: 720px) { .home-grid { grid-template-columns: 1fr; } main { padding: 14px; } .bar1 { padding: 8px 14px 4px; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); }
+  .card + .card { margin-top: 16px; }
+  .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .card-title { font-weight: 700; font-size: 14px; }
+  .card-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 15px; }
+  .total { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .total .value { font-size: 40px; font-weight: 750; letter-spacing: -.5px; }
+  .total .of { color: var(--muted); font-size: 16px; }
+  .meter { position: relative; height: 12px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 14px 0 8px; }
+  .meter > span { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--good); transition: width .4s; }
+  .meter > span.warn { background: var(--warn); } .meter > span.over { background: var(--bad); }
+  .meter-line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; flex-wrap: wrap; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .stat { font-size: 13px; margin-bottom: 12px; } .stat b { font-size: 20px; margin-right: 4px; }
+  .segmented { display: inline-flex; padding: 3px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border); margin-bottom: 6px; }
+  .segmented button { border: 0; background: none; color: var(--muted); padding: 5px 12px; border-radius: 7px; cursor: pointer; font-weight: 600; font-size: 12px; }
+  .segmented button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  .stack { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; } .stack .btn { width: 100%; }
+  .note { margin-top: 10px; font-size: 12px; padding: 8px 10px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); }
+
+  .cat { display: grid; grid-template-columns: 22px 190px 44px 1fr 92px 46px; align-items: center; gap: 12px; padding: 6px 8px; border-radius: 8px; }
+  .cat.click { cursor: pointer; } .cat:hover { background: var(--surface-2); }
+  .cat .count, .cat .share { color: var(--muted); text-align: right; } .cat .share { font-size: 12px; }
+  .cat .bytes { text-align: right; font-weight: 650; }
+  .cat .caret { color: var(--muted); font-size: 11px; }
+  .cat-note { grid-column: 2 / -1; font-size: 11px; color: var(--muted); margin-top: -4px; }
+  .bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+  .sub-list { margin: 2px 0 8px 34px; border-left: 1px solid var(--border); padding-left: 12px; }
+  .line { display: grid; grid-template-columns: 1fr 120px 86px 46px; gap: 12px; align-items: center; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+  .line:hover { background: var(--surface-2); }
+  .line .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .line .t.click { cursor: pointer; color: var(--accent); }
+  .line .s { text-align: right; font-weight: 600; } .line .p { text-align: right; color: var(--muted); font-size: 12px; }
+  .more { margin: 6px 0 4px 6px; }
+  @media (max-width: 720px) { .cat { grid-template-columns: 18px 1fr 80px 40px; } .cat .count, .cat .bar { display: none; } .line { grid-template-columns: 1fr 80px; } .line .b, .line .p { display: none; } }
+
+  /* Toolbars, tables */
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .stats .s { display: inline-flex; gap: 5px; align-items: baseline; padding: 4px 11px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; }
+  .stats .s b { font-size: 13px; } .stats .s.key { background: var(--good-soft); border-color: transparent; } .stats .s.acc { background: var(--accent-soft); border-color: transparent; }
+  .search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); width: 300px; max-width: 100%; }
+  .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .search input { flex: 1; border: 0; outline: 0; background: none; min-width: 0; }
+  .search kbd { font: 11px ui-monospace, monospace; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  .bulk { display: none; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 12px; border-radius: 10px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+  .bulk.show { display: flex; }
+  .table-card { padding: 0; overflow: hidden; }
+  .table-wrap { overflow: auto; max-height: calc(100vh - 290px); min-height: 240px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 7px 12px; text-align: left; white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--surface); z-index: 1; font-size: 12px; color: var(--muted); font-weight: 650; border-bottom: 1px solid var(--border); user-select: none; }
+  th.sort { cursor: pointer; } th.r, td.r { text-align: right; }
+  tbody tr { border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  tbody tr:hover { background: var(--surface-2); }
+  tbody tr.sel { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  tbody tr.pending td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  tbody tr.excluding { opacity: .55; }
+  .asset { display: flex; align-items: center; gap: 10px; min-width: 200px; cursor: pointer; }
+  .thumb { width: 30px; height: 30px; border-radius: 6px; object-fit: contain; background: repeating-conic-gradient(#8883 0% 25%, transparent 0% 50%) 50% / 10px 10px; border: 1px solid var(--border); flex-shrink: 0; }
+  .glyph { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex-shrink: 0; }
+  .asset .name { font-weight: 600; max-width: 300px; overflow: hidden; text-overflow: ellipsis; } .asset .path { font-size: 11px; color: var(--muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  .delta { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; margin-left: 6px; }
+  .delta.down { background: var(--good-soft); color: var(--good); } .delta.up { background: var(--bad-soft); color: var(--bad); }
+  .size-cell { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .size-cell > .num { min-width: 60px; text-align: right; }
+  .mini { width: 40px; height: 5px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .mini > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+  .trimcell { display: inline-flex; align-items: center; gap: 4px; }
+  .trimcell input { width: 58px; }
+  .play { width: 26px; height: 26px; padding: 0; border-radius: 50%; }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  input[type=checkbox].ck { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+
+  /* Drawer */
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 480px; max-width: 100%; z-index: 50; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -12px 0 40px rgba(0,0,0,.35); transform: translateX(105%); transition: transform .22s ease; display: flex; flex-direction: column; }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: flex-start; }
+  .drawer-head h2 { margin: 0; font-size: 17px; word-break: break-all; }
+  .drawer-body { padding: 14px 18px 30px; overflow: auto; flex: 1; }
+  .sec { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 18px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 13px; }
+  .kv .k { color: var(--muted); }
+  .metric { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 12px 0 2px; }
+  .metric b { font-size: 26px; }
+  .field { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; margin: 6px 0; }
+  .field select, .field input[type=range] { width: 100%; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .compare figure { margin: 0; }
+  .compare .imgbox { aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--border); display: grid; place-items: center; overflow: hidden; }
+  .compare .imgbox.checker { background: repeating-conic-gradient(#8884 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
+  .compare .imgbox.black { background: #000; } .compare .imgbox.white { background: #fff; }
+  .compare img { max-width: 100%; max-height: 100%; image-rendering: auto; }
+  .compare.pixel img { image-rendering: pixelated; width: 100%; height: 100%; object-fit: contain; }
+  .compare figcaption { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .wave { position: relative; height: 84px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin-top: 6px; }
+  .wave canvas { width: 100%; height: 100%; display: block; }
+  .shade { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,.55); pointer-events: none; }
+  .shade.l { left: 0; border-right: 2px solid var(--warn); } .shade.r { right: 0; border-left: 2px solid var(--warn); }
+  .dual { position: relative; height: 22px; margin-top: 4px; }
+  .dual input { position: absolute; inset: 0; width: 100%; pointer-events: none; background: none; -webkit-appearance: none; appearance: none; }
+  .dual input::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 14px; height: 18px; border-radius: 4px; background: var(--warn); cursor: ew-resize; }
+  .dual input::-moz-range-thumb { pointer-events: auto; width: 14px; height: 18px; border-radius: 4px; background: var(--warn); cursor: ew-resize; border: 0; }
+  audio { width: 100%; height: 34px; margin-top: 6px; }
+  .callout { padding: 8px 11px; border-radius: 8px; border-left: 3px solid var(--warn); background: var(--warn-soft); font-size: 13px; margin-bottom: 10px; }
+  .roots { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 12px; }
+  .rootchip { padding: 2px 10px; border-radius: 999px; background: var(--accent-soft); cursor: pointer; }
+  .tree .node { margin-top: 4px; }
+  .tree .head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .tree .nm { font-weight: 650; color: var(--accent); cursor: pointer; }
+  .tree .fd { font-size: 11px; color: var(--muted); }
+  .tree .where { margin-left: 16px; font-size: 11px; color: var(--muted); }
+  .tree .where code { font: 11px ui-monospace, SFMono-Regular, monospace; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+  .tree .kids { margin-left: 7px; padding-left: 12px; border-left: 1px solid var(--border); }
+  .acts { display: flex; gap: 8px; margin-top: 20px; } .acts .btn { flex: 1; }
+  .preview-big { width: 100%; aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); display: grid; place-items: center; overflow: hidden; }
+  .preview-big img { width: 100%; height: 100%; object-fit: contain; }
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 45; display: none; }
+  .scrim.show { display: block; }
+
+  /* Exclusions */
+  .xitem { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+  .xitem .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .xitem .nm { font-weight: 650; cursor: pointer; }
+  .xitem .body { margin-top: 8px; }
+  .modules { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 18px; }
+  .module { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; }
+  .module:hover { background: var(--surface-2); }
+  .module.changed { background: var(--accent-soft); }
+  .module .sz { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+  /* Save bar, toast, modal, popover */
+  .savebar { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 160%); display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.35); transition: transform .25s ease; z-index: 40; max-width: calc(100% - 32px); }
+  .savebar.show { transform: translate(-50%, 0); }
+  .toast { position: fixed; right: 22px; top: 96px; z-index: 70; max-width: 400px; padding: 12px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); opacity: 0; transform: translateY(-8px); transition: opacity .2s, transform .2s; pointer-events: none; white-space: pre-line; }
+  .toast.show { opacity: 1; transform: translateY(0); } .toast.error { border-color: var(--bad); }
+  .modal-back { position: fixed; inset: 0; z-index: 80; background: rgba(0,0,0,.5); display: none; place-items: center; padding: 20px; }
+  .modal-back.show { display: grid; }
+  .modal { width: 100%; max-width: 560px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  .modal h3 { margin: 0 0 10px; }
+  .modal pre { white-space: pre-wrap; font: inherit; color: var(--text); margin: 0; max-height: 50vh; overflow: auto; }
+  .modal .acts { justify-content: flex-end; } .modal .acts .btn { flex: 0 0 auto; }
+  .popover { position: fixed; z-index: 60; width: 460px; max-width: calc(100% - 24px); max-height: 70vh; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 50px rgba(0,0,0,.4); padding: 8px; display: none; }
+  .popover.show { display: block; }
+  .hist { padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .hist:hover { background: var(--surface-2); }
+  .hist .when { font-size: 11px; color: var(--muted); }
+  .hist-sec { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 8px 10px 2px; font-weight: 700; }
+  footer { margin-top: 26px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="bar1">
+    <div class="brand"><div class="logo">◐</div>Luna Optimizer</div>
+    <span class="chip" id="projChip"></span>
+    <span class="chip">Scene <select id="sceneSel" title="The scene Luna builds"></select></span>
+    <span class="chip" id="netChip"></span>
+    <span class="chip warn" id="staleChip" hidden></span>
+    <div class="spacer"></div>
+    <a class="btn sm ghost" href="#exclusions" id="exclBtn">Exclusions</a>
+    <button class="btn sm ghost" id="undoBtn">Undo ▾</button>
+    <span class="conn" id="conn"><span class="dot"></span><span>Connected to Unity</span></span>
+  </div>
+  <nav class="tabs" id="nav">
+    <a href="#home" data-view="home">Home</a>
+    <a href="#overview" data-view="overview">Overview</a>
+    <a href="#textures" data-view="textures">Textures <span class="badge" id="navTex"></span></a>
+    <a href="#sounds" data-view="sounds">Sounds <span class="badge" id="navSnd"></span></a>
+    <a href="#assets" data-view="assets">Models &amp; Other</a>
+    <a href="#exclusions" data-view="exclusions">Exclusions <span class="badge" id="navExcl" hidden></span></a>
+  </nav>
+</header>
+
+<main>
+  <div class="banner bad" id="offline" hidden>Unity is not answering. Is the editor open (or busy compiling)? Retrying…</div>
+
+  <!-- HOME -->
+  <section id="view-home" hidden>
+    <div class="grid home-grid">
+      <div class="card size-card">
+        <div class="card-head"><div class="card-icon">◔</div><div class="card-title">Playable size</div></div>
+        <div class="total"><span class="value num" id="hTotal">–</span><span class="of num" id="hOf"></span></div>
+        <div class="meter" id="hMeter"><span id="hFill" style="width:0"></span></div>
+        <div class="meter-line"><span class="num" id="hPct"></span><span class="muted small" id="hFresh"></span></div>
+        <div class="row" style="margin-top:14px"><button class="btn primary" id="hMeasure">Quick predict</button><span class="muted small" id="hMeasureNote"></span></div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <div class="card-head"><div class="card-icon">▦</div><div class="card-title">Textures</div></div>
+        <div class="stat" id="hTex"></div>
+        <div class="segmented" id="hPresets"></div>
+        <div class="muted small" id="hPresetHint"></div>
+        <div class="stack">
+          <button class="btn primary" data-act="shrink">Shrink texture formats</button>
+          <button class="btn" data-act="predict-textures" id="hTexPredict">Predict texture sizes</button>
+        </div>
+        <div class="note" id="hTexNote" hidden></div>
+        <div style="margin-top:12px"><a class="btn link" href="#textures">Open Textures →</a></div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <div class="card-head"><div class="card-icon">♫</div><div class="card-title">Sounds</div></div>
+        <div class="stat" id="hSnd"></div>
+        <div class="stack">
+          <button class="btn primary" data-act="trim-silence">Trim silence</button>
+          <button class="btn" data-act="mono">Make all mono</button>
+          <button class="btn" data-act="predict-sounds" id="hSndPredict">Predict sound sizes</button>
+        </div>
+        <div style="margin-top:12px"><a class="btn link" href="#sounds">Open Sounds →</a></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><div class="card-icon">≡</div><div class="card-title">What ships</div><span class="muted small">largest first · details in Overview</span></div>
+      <div id="hCats"></div>
+    </div>
+  </section>
+
+  <!-- OVERVIEW -->
+  <section id="view-overview" hidden>
+    <div class="toolbar">
+      <button class="btn primary" id="oMeasure">Measure</button>
+      <span class="muted small" id="oMeasuring"></span>
+      <label class="toggle" title="Re-measure in the background when scripts, Luna settings or textures change."><input type="checkbox" id="oAuto"><span class="switch"></span>Auto</label>
+      <label class="toggle" title="Real Luna builds reuse what Measure already computed (compile cache, Brotli). Outputs are identical."><input type="checkbox" id="oSpeed"><span class="switch"></span>Speed up builds</label>
+      <div class="spacer"></div>
+      <span class="muted small">Network</span><select class="sel" id="oNet"></select>
+      <label class="search"><span class="muted">⌕</span><input id="oSearch" placeholder="Filter assets, scripts, types…" autocomplete="off"></label>
+    </div>
+    <div id="oBanners"></div>
+    <div id="oBody"></div>
+  </section>
+
+  <!-- TEXTURES -->
+  <section id="view-textures" hidden>
+    <div class="toolbar">
+      <button class="btn" data-act="predict-textures" id="tPredict">Predict</button>
+      <button class="btn" id="tSmallest" title="Predict PNG, WebP and (without alpha) JPEG for the listed textures and pick the smallest. Nothing is saved.">Pick smallest format</button>
+      <span class="muted small">WebP q</span><input class="inp num sm" id="tWebp" type="number" min="1" max="100">
+      <span class="muted small">JPEG q</span><input class="inp num sm" id="tJpeg" type="number" min="1" max="100">
+      <select class="sel sm" id="tSources" title="Change the PNG files themselves (backed up first). Confirm in Unity.">
+        <option value="">Source files…</option><option value="tex-optimize-sources">Optimize sources… (in Unity)</option><option value="tex-restore">Restore originals… (in Unity)</option>
+      </select>
+      <button class="btn ghost sm" data-act="rescan-textures">Rescan</button>
+      <div class="spacer"></div>
+      <label class="search"><span class="muted">⌕</span><input id="tSearch" placeholder="Search textures" autocomplete="off"><kbd>/</kbd></label>
+    </div>
+    <div class="stats" id="tStats"></div>
+    <div class="banner warn" id="tWarn" hidden></div>
+    <div class="bulk" id="tBulk">
+      <b id="tBulkCount"></b>
+      <select class="sel sm" id="tBulkFormat"></select>
+      <select class="sel sm" id="tBulkSize"></select>
+      <button class="btn primary sm" id="tBulkApply">Apply</button>
+      <button class="btn sm" id="tBulkSmallest">Pick smallest</button>
+      <button class="btn sm" id="tBulkExclude">Exclude…</button>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="tBulkClear">Clear</button>
+    </div>
+    <div class="card table-card"><div class="table-wrap" id="tTable"></div></div>
+  </section>
+
+  <!-- SOUNDS -->
+  <section id="view-sounds" hidden>
+    <div class="toolbar">
+      <button class="btn" data-act="predict-sounds" id="sPredict">Predict</button>
+      <button class="btn" id="sStop" title="Stop playback">■ Stop</button>
+      <button class="btn ghost sm" data-act="rescan-sounds">Rescan</button>
+      <div class="spacer"></div>
+      <label class="search"><span class="muted">⌕</span><input id="sSearch" placeholder="Search sounds" autocomplete="off"><kbd>/</kbd></label>
+    </div>
+    <div class="stats" id="sStats"></div>
+    <div id="sBanners"></div>
+    <div class="bulk" id="sBulk">
+      <b id="sBulkCount"></b>
+      <select class="sel sm" id="sBulkFormat"></select>
+      <select class="sel sm" id="sBulkBitrate"></select>
+      <select class="sel sm" id="sBulkChannels"></select>
+      <button class="btn primary sm" id="sBulkApply">Apply</button>
+      <button class="btn sm" id="sBulkTrim">Trim silence</button>
+      <button class="btn sm" id="sBulkExclude">Exclude…</button>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="sBulkClear">Clear</button>
+    </div>
+    <div class="card table-card"><div class="table-wrap" id="sTable"></div></div>
+  </section>
+
+  <!-- MODELS & OTHER -->
+  <section id="view-assets" hidden>
+    <div class="toolbar">
+      <select class="sel" id="aKind"></select>
+      <button class="btn ghost sm" data-act="rescan-assets">Rescan</button>
+      <span class="muted small">Sizes in the playable come from the Overview's last Measure.</span>
+      <div class="spacer"></div>
+      <label class="search"><span class="muted">⌕</span><input id="aSearch" placeholder="Search assets" autocomplete="off"><kbd>/</kbd></label>
+    </div>
+    <div class="stats" id="aStats"></div>
+    <div class="bulk" id="aBulk"><b id="aBulkCount"></b><button class="btn sm" id="aBulkExclude">Exclude…</button><div class="spacer"></div><button class="btn ghost sm" id="aBulkClear">Clear</button></div>
+    <div class="card table-card"><div class="table-wrap" id="aTable"></div></div>
+  </section>
+
+  <!-- EXCLUSIONS -->
+  <section id="view-exclusions" hidden>
+    <div class="card">
+      <div class="card-head"><div class="card-icon">⦸</div><div class="card-title" id="xPendTitle">Pending</div><div class="spacer"></div>
+        <button class="btn primary" id="xApply">Apply to Luna</button><button class="btn ghost" id="xClear">Clear</button></div>
+      <div class="muted small">Luna drops excluded assets silently: whatever uses them keeps a broken reference (an excluded texture renders white). Review the uses before applying. Add assets from any table (tick rows, then Exclude…).</div>
+      <div id="xBlockers"></div>
+      <div id="xPending"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-icon">✓</div><div class="card-title" id="xExclTitle">Excluded now</div></div>
+      <div class="muted small">Left out of the build now. Uses listed here are references that are broken in the playable.</div>
+      <div id="xExcluded"></div>
+    </div>
+  </section>
+
+  <footer>Runs inside your Unity editor at <span id="url"></span>. Changes stay unsaved until “Save to Luna”; every save can be undone (Undo ▾).</footer>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head"><div style="flex:1;min-width:0" id="dHead"></div><button class="btn ghost sm" id="dClose">✕</button></div>
+  <div class="drawer-body" id="dBody"></div>
+</aside>
+
+<div class="savebar" id="savebar">
+  <span style="font-weight:650" id="saveText"></span>
+  <button class="btn ghost" data-act="discard" data-confirm="Discard every unsaved change?">Discard</button>
+  <button class="btn primary" data-act="save">Save to Luna</button>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal-back" id="modalBack"><div class="modal"><h3 id="modalTitle">Confirm</h3><pre id="modalText"></pre>
+  <div class="acts"><button class="btn ghost" id="modalNo">Cancel</button><button class="btn primary" id="modalYes">Continue</button></div></div></div>
+<div class="popover" id="undoPop"></div>
+<audio id="player" hidden></audio>
+
+<script>
+(function () {
+  "use strict";
+  var KEY = "__LO_TOKEN__";
+  var S = null;                 // /api/state
+  var OV = null;                // /api/overview
+  var AS = null;                // /api/assets
+  var EX = null;                // /api/exclusions
+  var view = "home";
+  var q = { textures: "", sounds: "", assets: "", overview: "" };
+  var sort = { textures: { key: "predicted", dir: -1 }, sounds: { key: "predicted", dir: -1 }, assets: { key: "playable", dir: -1 } };
+  var ticked = { textures: new Set(), sounds: new Set(), assets: new Set() };
+  var open = new Set();         // expanded overview categories / lists / exclusion items
+  var detail = null;            // { kind, path }
+  var lastHtml = {};
+  var kindFilter = "";
+  var previewBg = "checker", previewPixel = false;
+
+  // ---------------------------------------------------------------- utils
+  function $(id) { return document.getElementById(id); }
+  function esc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function bytes(v) { if (v == null || v < 0) return "–"; var a = Math.abs(v); return a >= 1048576 ? (v / 1048576).toFixed(2) + " MB" : (v / 1024).toFixed(1) + " KB"; }
+  function delta(v) { return v ? '<span class="delta ' + (v < 0 ? "down" : "up") + '">' + (v < 0 ? "−" : "+") + bytes(Math.abs(v)) + "</span>" : ""; }
+  function folderOf(p) { return p.substring(0, p.lastIndexOf("/")); }
+  function fileOf(p) { return p.substring(p.lastIndexOf("/") + 1); }
+  function pretty(n) { n = n.replace(/-/g, " "); return n.charAt(0).toUpperCase() + n.slice(1); }
+  function setHtml(id, html) { if (lastHtml[id] === html) return false; lastHtml[id] = html; $(id).innerHTML = html; return true; }
+  function enc(v) { return encodeURIComponent(v); }
+  function url(path, params) { var s = path + "?key=" + KEY; for (var k in params) s += "&" + k + "=" + enc(params[k]); return s; }
+  function busyIn(el) { return el && el.closest && el.closest("table") && /^(SELECT|INPUT)$/.test(el.tagName); }
+
+  function get(path, params) {
+    return fetch(url(path, params || {})).then(function (r) {
+      if (r.status === 403) { location.reload(); throw new Error("expired"); }
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+  }
+  function toast(msg, err) {
+    if (!msg) return;
+    var el = $("toast"); el.textContent = msg; el.className = "toast show" + (err ? " error" : "");
+    clearTimeout(toast.t); toast.t = setTimeout(function () { el.className = "toast"; }, 4500);
+  }
+  function confirmBox(text, title, yes) {
+    return new Promise(function (resolve) {
+      $("modalTitle").textContent = title || "Confirm"; $("modalText").textContent = text; $("modalYes").textContent = yes || "Continue";
+      $("modalBack").className = "modal-back show";
+      function done(v) { $("modalBack").className = "modal-back"; $("modalYes").onclick = $("modalNo").onclick = null; resolve(v); }
+      $("modalYes").onclick = function () { done(true); }; $("modalNo").onclick = function () { done(false); };
+    });
+  }
+  // POST an action; shows Unity's confirmation text first when the API asks for it.
+  function act(name, params, button) {
+    var body = Object.assign({ name: name }, params || {});
+    if (button) button.classList.add("busy");
+    return fetch("/api/action", { method: "POST", headers: { "Content-Type": "application/json", "X-LO-Token": KEY }, body: JSON.stringify(body) })
+      .then(function (r) { if (r.status === 403) { location.reload(); throw new Error("expired"); } return r.json(); })
+      .then(function (res) {
+        if (res.confirm) {
+          if (button) button.classList.remove("busy");
+          return confirmBox(res.confirm).then(function (ok) { if (ok) return act(name, Object.assign({}, params, { confirmed: true }), button); });
+        }
+        toast(res.message, !res.ok);
+        return refreshAll();
+      })
+      .catch(function (e) { if (e.message !== "expired") toast("Unity did not answer: " + e.message, true); })
+      .finally(function () { if (button) button.classList.remove("busy"); });
+  }
+
+  // ---------------------------------------------------------------- data
+  function refreshState() {
+    return get("/api/state").then(function (s) { S = s; $("offline").hidden = true; setConn(true); renderHeader(); renderView(); })
+      .catch(function () { setConn(false); $("offline").hidden = false; });
+  }
+  function refreshAll() {
+    var p = [refreshState()];
+    if (view === "overview") p.push(loadOverview());
+    if (view === "assets") p.push(loadAssets());
+    if (view === "exclusions" || view === "assets") p.push(loadExclusions());
+    if (detail) p.push(loadDetail());
+    return Promise.all(p);
+  }
+  function loadOverview() { return get("/api/overview").then(function (d) { OV = d; renderOverview(); }); }
+  function loadAssets() { return get("/api/assets").then(function (d) { AS = d; renderAssets(); }); }
+  function loadExclusions() { return get("/api/exclusions").then(function (d) { EX = d; renderExclusions(); }); }
+  function setConn(on) { var c = $("conn"); c.querySelector(".dot").className = "dot" + (on ? "" : " off"); c.querySelector("span:last-child").textContent = on ? "Connected to Unity" : "Unity not responding"; }
+
+  // ---------------------------------------------------------------- header + nav
+  function renderHeader() {
+    $("url").textContent = location.origin;
+    $("projChip").textContent = S.project;
+    $("netChip").textContent = S.network || "";
+    $("staleChip").hidden = !S.sceneStale;
+    $("staleChip").textContent = "≈ " + (S.scene || "") + " not built: sizes partly estimated";
+    var opts = (S.scenes || []).map(function (p) { return '<option value="' + esc(p) + '"' + (p === S.scenePath ? " selected" : "") + ">" + esc(fileOf(p).replace(/\.unity$/, "")) + "</option>"; }).join("");
+    if (document.activeElement !== $("sceneSel")) setHtml("sceneSel", opts || "<option>(none)</option>");
+    var t = S.textures, d = S.sounds;
+    $("navTex").textContent = t.pending ? t.pending + " unsaved" : t.count; $("navTex").className = "badge" + (t.pending ? " accent" : "");
+    $("navSnd").textContent = d.pending ? d.pending + " unsaved" : d.count; $("navSnd").className = "badge" + (d.pending ? " accent" : "");
+    $("navExcl").hidden = !S.exclusionsPending; $("navExcl").textContent = S.exclusionsPending + " pending"; $("navExcl").className = "badge warn";
+    $("exclBtn").textContent = "Exclusions" + (S.exclusionsPending ? " (" + S.exclusionsPending + ")" : "");
+    var saving = (t.saving || 0) + (d.saving || 0);
+    $("saveText").textContent = S.pending + " unsaved change" + (S.pending === 1 ? "" : "s") + (Math.abs(saving) >= 1 ? (saving > 0 ? "  ·  saves ~" + bytes(saving) : "  ·  adds ~" + bytes(-saving)) : "");
+    $("savebar").className = "savebar" + (S.pending > 0 ? " show" : "");
+  }
+  // "#textures" or "#textures/Assets/…png" (opens that item's details).
+  function route() {
+    var h = decodeURIComponent((location.hash || "#home").slice(1)), slash = h.indexOf("/");
+    var v = slash > 0 ? h.slice(0, slash) : h, deep = slash > 0 ? h.slice(slash + 1) : null;
+    if (!$("view-" + v)) v = "home";
+    view = v;
+    document.querySelectorAll("main > section").forEach(function (s) { s.hidden = s.id !== "view-" + v; });
+    document.querySelectorAll("#nav a").forEach(function (a) { a.classList.toggle("on", a.dataset.view === v); });
+    closeDrawer();
+    lastHtml = {};
+    refreshAll();
+    var kind = { textures: "texture", sounds: "sound", assets: "asset" }[v];
+    if (deep && kind) openDrawer(kind, deep);
+  }
+  function renderView() {
+    if (!S) return;
+    if (view === "home") renderHome();
+    else if (view === "textures") renderTextures();
+    else if (view === "sounds") renderSounds();
+  }
+
+  // ---------------------------------------------------------------- home
+  function renderHome() {
+    var ratio = S.measured && S.limit > 0 ? S.total / S.limit : 0;
+    $("hTotal").textContent = S.measured ? bytes(S.total) : "Not measured";
+    $("hOf").textContent = S.measured && S.limit > 0 ? "of " + bytes(S.limit) : "";
+    $("hMeter").style.display = S.measured && S.limit > 0 ? "" : "none";
+    $("hFill").style.width = Math.min(100, ratio * 100) + "%"; $("hFill").className = ratio > 1 ? "over" : ratio > .85 ? "warn" : "";
+    $("hPct").textContent = S.measured && S.limit > 0 ? Math.round(ratio * 100) + "%  ·  " + (S.limit >= S.total ? bytes(S.limit - S.total) + " left" : bytes(S.total - S.limit) + " over the cap") : "";
+    $("hFresh").textContent = S.measuredAt ? "Measured " + S.measuredAt : "";
+    var m = $("hMeasure"); m.textContent = S.measuring ? "Cancel" : "Quick predict"; m.className = "btn" + (S.measuring ? "" : " primary"); m.disabled = !S.lunaFound;
+    $("hMeasureNote").textContent = !S.lunaFound ? "No Luna install found." : S.measuring ? "Measuring… the first run compiles scripts (~30-40 s)." : S.problem || "Runs Luna's own size statistics, no full build.";
+    var t = S.textures, d = S.sounds;
+    $("hTex").innerHTML = "<b class=num>" + t.count + "</b> textures" + (t.predictedCount ? " · " + bytes(t.predictedBytes) + " predicted" : "");
+    setHtml("hPresets", (S.presets || []).map(function (n, i) { return '<button data-preset="' + i + '" class="' + (i === S.preset ? "on" : "") + '">' + esc(n) + "</button>"; }).join(""));
+    $("hPresetHint").textContent = S.presetHint || "";
+    $("hTexPredict").hidden = !t.canPredict; $("hSndPredict").hidden = !d.canPredict;
+    $("hTexNote").hidden = !t.compressedImport; $("hTexNote").textContent = t.compressedImport + " texture(s) reach Luna through Unity's compressed import, which usually makes them bigger.";
+    $("hSnd").innerHTML = "<b class=num>" + d.count + "</b> sounds" + (d.predictedCount ? " · " + bytes(d.predictedBytes) + " predicted" : "");
+    var cats = S.categories || [];
+    if (!cats.length) { setHtml("hCats", '<div class="muted">Press Quick predict to see what each asset type costs.</div>'); return; }
+    var big = Math.max.apply(null, cats.map(function (c) { return c.bytes; })), sum = cats.reduce(function (a, c) { return a + c.bytes; }, 0);
+    setHtml("hCats", cats.map(function (c) {
+      return '<div class="cat"><span></span><span>' + esc(pretty(c.name)) + (c.estimated ? ' <span class="muted">≈</span>' : "") + '</span><span class="count num">' + (c.count || "") + '</span><div class="bar"><span style="width:' + c.bytes / big * 100 + '%"></span></div><span class="bytes num">' + bytes(c.bytes) + '</span><span class="share num">' + (c.bytes / sum * 100).toFixed(0) + "%</span></div>";
+    }).join(""));
+  }
+
+  // ---------------------------------------------------------------- overview
+  function matches(t) { var f = q.overview.toLowerCase(); return !f || (t && String(t).toLowerCase().indexOf(f) >= 0); }
+  function lines(key, items, render, limit) {
+    limit = limit || 20;
+    var all = q.overview || open.has("all:" + key);
+    var shown = all ? items : items.slice(0, limit);
+    var html = shown.map(render).join("");
+    if (!q.overview && items.length > limit) html += '<div class="more"><button class="btn sm ghost" data-toggle="all:' + key + '">' + (all ? "Show fewer" : "Show all " + items.length) + "</button></div>";
+    return html;
+  }
+  function line(title, size, whole, locate, tag) {
+    var share = whole > 0 ? size / whole : 0;
+    return '<div class="line"><span class="t' + (locate ? " click" : "") + '"' + (locate ? ' data-locate="' + esc(locate) + '"' : "") + ' title="' + esc(title) + '">' + esc(title) + (tag ? ' <span class="badge warn">' + esc(tag) + "</span>" : "") + '</span><span class="b"><span class="bar"><span style="width:' + Math.min(100, share * 100) + '%"></span></span></span><span class="s num">' + bytes(size) + '</span><span class="p num">' + (share >= .005 ? (share * 100).toFixed(0) + "%" : "<1%") + "</span></div>";
+  }
+  function renderOverview() {
+    if (!OV) return;
+    var o = OV;
+    var mb = $("oMeasure"); mb.textContent = o.measuring ? "Cancel" : "Measure"; mb.className = "btn" + (o.measuring ? "" : " primary"); mb.disabled = !o.lunaFound;
+    $("oMeasuring").textContent = o.measuringLabel || "";
+    $("oAuto").checked = o.auto; $("oSpeed").checked = o.speedUp;
+    if (document.activeElement !== $("oNet")) setHtml("oNet", (o.networks || []).map(function (n) { return '<option value="' + esc(n.name) + '"' + (n.name === o.selectedNetwork ? " selected" : "") + ">" + esc(n.name) + (n.limit ? " · " + bytes(n.limit) : "") + "</option>"; }).join(""));
+    var banners = "";
+    if (!o.lunaFound) banners += '<div class="banner warn">No Luna install found among this project\'s packages.</div>';
+    if (o.staleNote) banners += '<div class="banner warn">' + esc(o.staleNote) + "</div>";
+    if (o.message) banners += '<div class="banner ' + (o.messageType === "Error" ? "bad" : o.messageType === "Warning" ? "warn" : "info") + '">' + esc(o.message) + "</div>";
+    if (o.measuredNetwork && o.measuredNetwork !== o.selectedNetwork) banners += '<div class="banner info">These numbers are for ' + esc(o.measuredNetwork) + ". Press Measure for " + esc(o.selectedNetwork) + " (only Luna's statistics run again, ~15-20 s).</div>";
+    setHtml("oBanners", banners);
+    if (!o.measured) { setHtml("oBody", '<div class="card"><div class="muted">Press Measure. Scripts and textures are measured from your current project (no Luna build); the first measure compiles your scripts (~30-40 s). Needs one earlier Luna build for the other assets.</div></div>'); return; }
+
+    var ratio = o.limit > 0 ? o.total / o.limit : 0, html = "";
+    html += '<div class="card"><div class="total"><span class="value num">' + bytes(o.total) + '</span><span class="of">' + (o.limit > 0 ? "of " + bytes(o.limit) + " · " : "") + esc(o.measuredNetwork) + "</span></div>";
+    if (o.limit > 0) html += '<div class="meter"><span class="' + (ratio > 1 ? "over" : ratio > .85 ? "warn" : "") + '" style="width:' + Math.min(100, ratio * 100) + '%"></span></div><div class="meter-line"><span class="num">' + Math.round(ratio * 100) + "% · " + (o.limit >= o.total ? bytes(o.limit - o.total) + " left" : bytes(o.total - o.limit) + " over") + "</span></div>";
+    html += '<div class="muted small" style="margin-top:6px">' + esc(o.freshness || "") + (o.changedSinceBuild ? ' <span class="warn-text">' + o.changedSinceBuild + " asset(s) changed since that build.</span>" : "") + "</div></div>";
+
+    // Categories
+    html += '<div class="card"><div class="card-head"><div class="card-title">By category</div><span class="muted small">click a category to list its assets; click an asset to select it in Unity</span></div>';
+    (o.categories || []).forEach(function (c) {
+      var assets = c.assets.filter(function (a) { return matches(a.title) || matches(a.path); });
+      if (q.overview && !assets.length && !matches(c.name)) return;
+      var key = "cat:" + c.name, isOpen = open.has(key) || (q.overview && assets.length);
+      html += '<div class="cat' + (c.count ? " click" : "") + '"' + (c.count ? ' data-toggle="' + esc(key) + '"' : "") + '><span class="caret">' + (c.count ? (isOpen ? "▾" : "▸") : "") + '</span><span>' + esc(pretty(c.name)) + (c.count ? ' <span class="muted">(' + c.count + ")</span>" : "") + '</span><span></span><div class="bar"><span style="width:' + (o.total ? c.size / o.total * 100 : 0) + '%"></span></div><span class="bytes num">' + bytes(c.size) + '</span><span class="share num">' + (o.total ? (c.size / o.total * 100).toFixed(0) : 0) + "%</span>" + (c.note ? '<span class="cat-note">' + esc(c.note) + "</span>" : "") + "</div>";
+      if (isOpen) html += '<div class="sub-list">' + lines(key, assets, function (a) { return line(a.title + (a.path && a.path !== a.title ? "   " + a.path : ""), a.size, o.total, JSON.stringify([a.path || "", a.title || "", c.name]), a.tag); }) + "</div>";
+    });
+    html += "</div>";
+
+    // Scripts
+    var sc = o.scripts || {};
+    html += '<div class="card"><div class="card-head"><div class="card-title">Scripts</div><span class="muted">' + bytes(sc.total) + "</span></div>";
+    if (!sc.files) html += '<div class="muted">No script breakdown in this measurement.</div>';
+    else {
+      html += sc.files.filter(function (f) { return matches(f.name); }).map(function (f) { return line(f.name, f.size, sc.total); }).join("");
+      if (sc.namespaces) {
+        html += '<div class="sec">Your C# code · ' + bytes(sc.user) + " in " + sc.typeCount + " types</div>";
+        html += sc.namespaces.filter(function (n) { return matches(n.name); }).map(function (n) { return line(n.name + "  (" + n.count + " types)", n.size, sc.user); }).join("");
+        if (!q.overview && sc.metadata > 0) html += line("reflection metadata (all types)", sc.metadata, sc.user);
+        if (sc.csFiles) {
+          var files = sc.csFiles.filter(function (f) { return matches(f.path); }), fk = "list:files", fo = open.has(fk) || (q.overview && files.length);
+          html += '<div class="cat click" data-toggle="' + fk + '"><span class="caret">' + (fo ? "▾" : "▸") + "</span><span>C# files <span class=muted>(" + sc.csFiles.length + ")</span></span></div>";
+          if (fo) html += '<div class="sub-list">' + lines(fk, files, function (f) { return line(fileOf(f.path) + "   " + folderOf(f.path), f.size, sc.user, JSON.stringify([f.path, "", "script"])); }) + "</div>";
+        }
+        var types = (sc.types || []).filter(function (t) { return matches(t.name); }), tk = "list:types", to = open.has(tk) || (q.overview && types.length);
+        html += '<div class="cat click" data-toggle="' + tk + '"><span class="caret">' + (to ? "▾" : "▸") + "</span><span>C# types <span class=muted>(" + (sc.types || []).length + ")</span></span></div>";
+        if (to) html += '<div class="sub-list">' + lines(tk, types, function (t) { return line(t.name, t.size, sc.user, t.path ? JSON.stringify([t.path, "", "script"]) : null); }) + "</div>";
+      }
+    }
+    html += "</div>";
+
+    // Modules
+    html += '<div class="card"><div class="card-head"><div class="card-title">Engine modules</div><div class="spacer"></div>'
+      + '<button class="btn sm" id="oWhatIf"' + (o.planChanged && !o.measuring ? "" : " disabled") + ">Measure what-if</button>"
+      + '<button class="btn sm primary" id="oApplyPlan"' + (o.planChanged && !o.measuring ? "" : " disabled") + ">Apply to Luna…</button>"
+      + '<button class="btn sm ghost" id="oResetPlan"' + (o.planChanged ? "" : " disabled") + ">Reset</button></div>"
+      + '<div class="muted small" style="margin-bottom:8px">Unticking ships Luna\'s empty stub instead. Measure the what-if to see the exact size; only remove what the game does not use, then playtest.</div><div class="modules">';
+    (o.modules || []).forEach(function (m) {
+      var changed = m.planned !== m.saved;
+      html += '<label class="module' + (changed ? " changed" : "") + '"><input type="checkbox" class="ck" data-module="' + esc(m.name) + '"' + (m.planned ? " checked" : "") + "><span>" + esc(m.label) + (changed ? ' <span class="badge accent">changed</span>' : "") + '</span><span class="sz num">' + (m.size != null ? bytes(m.size) : m.saved ? "" : "stub") + "</span></label>";
+    });
+    html += "</div>";
+    if (o.whatIf) { var w = o.whatIf, save = w.now - w.total; html += '<div class="banner info" style="margin-top:12px">What-if (' + esc(w.label) + "): " + bytes(w.total) + " instead of " + bytes(w.now) + " → <b>" + (save >= 0 ? "saves " + bytes(save) : "adds " + bytes(-save)) + "</b>. Scripts " + bytes(w.scripts) + " instead of " + bytes(w.scriptsNow) + ".</div>"; }
+    html += "</div>";
+
+    // Excluded
+    html += '<div class="card"><div class="card-head"><div class="card-title">Excluded from the build</div><span class="muted">' + (o.excluded || []).length + '</span><div class="spacer"></div><a class="btn sm" href="#exclusions">Open Exclusions</a></div>';
+    if (!(o.excluded || []).length) html += '<div class="muted">Nothing excluded. Tick assets in any table, choose Exclude…, review them in Exclusions, then Apply.</div>';
+    (o.excluded || []).forEach(function (x) { html += '<div class="line"><span class="t click" data-ping="' + esc(x.path) + '">' + esc(x.path) + (x.exists ? "" : ' <span class="badge warn">missing in project</span>') + '</span><span></span><span></span><span class="p"><button class="btn sm" data-reinclude="' + esc(x.path) + '" data-act-name="ov-reinclude">Re-include</button></span></div>'; });
+    html += "</div>";
+    setHtml("oBody", html);
+  }
+
+  // ---------------------------------------------------------------- shared table bits
+  function filterSort(rows, tab, cols) {
+    var f = q[tab].toLowerCase();
+    if (f) rows = rows.filter(function (r) { return r.path.toLowerCase().indexOf(f) >= 0; });
+    var o = sort[tab], col = cols.filter(function (c) { return c.key === o.key; })[0] || cols[0];
+    return rows.slice().sort(function (a, b) {
+      var x = col.val ? col.val(a) : a[col.key], y = col.val ? col.val(b) : b[col.key];
+      if (typeof x === "string") return x.localeCompare(y) * o.dir;
+      return ((x || 0) - (y || 0)) * o.dir;
+    });
+  }
+  function head(tab, cols, allTicked) {
+    return "<thead><tr><th style=\"width:30px\"><input type=checkbox class=ck data-tickall=\"" + tab + "\"" + (allTicked ? " checked" : "") + ' title="Tick every listed row"></th>' + cols.map(function (c) {
+      var on = sort[tab].key === c.key;
+      return '<th class="' + (c.r ? "r " : "") + (c.nosort ? "" : "sort") + '"' + (c.nosort ? "" : ' data-sort="' + tab + ":" + c.key + '"') + ">" + esc(c.title) + (on ? " " + (sort[tab].dir < 0 ? "↓" : "↑") : "") + "</th>";
+    }).join("") + "</tr></thead>";
+  }
+  function sizeCell(r, largest) {
+    if (r.failed) return '<span class="badge warn" title="' + esc(r.failed) + '">failed</span>';
+    var meter = r.predicted >= 0 ? '<span class="mini"><span style="width:' + Math.sqrt(Math.max(0, r.predicted) / largest) * 100 + '%"></span></span>' : "";
+    return '<span class="size-cell">' + meter + '<span class="num">' + bytes(r.predicted) + "</span>" + delta(r.delta) + "</span>";
+  }
+  function options(list, selected) { return list.map(function (v, i) { return '<option value="' + esc(v) + '"' + (i === selected || v === selected ? " selected" : "") + ">" + esc(v) + "</option>"; }).join(""); }
+  function bulkBar(tab, prefix, rows) {
+    var listed = new Set(rows.map(function (r) { return r.path; }));
+    var n = Array.from(ticked[tab]).filter(function (p) { return listed.has(p); }).length;
+    $(prefix + "Bulk").className = "bulk" + (n ? " show" : "");
+    $(prefix + "BulkCount").textContent = n + " selected" + (ticked[tab].size > n ? " (+" + (ticked[tab].size - n) + " hidden)" : "");
+    return n;
+  }
+  function tickedListed(tab, rows) { var listed = new Set(rows.map(function (r) { return r.path; })); return Array.from(ticked[tab]).filter(function (p) { return listed.has(p); }); }
+
+  // ---------------------------------------------------------------- textures
+  var TCOLS = [
+    { key: "name", title: "Texture" }, { key: "file", title: "File", r: true }, { key: "unityCompression", title: "Unity compression" },
+    { key: "formatLabel", title: "Luna format", val: function (r) { return r.formats[r.format]; } }, { key: "sizeIndex", title: "Max size", val: function (r) { var p = r.outSize.split("×"); return p[0] * p[1]; } },
+    { key: "predicted", title: "In playable", r: true }, { key: "lastBuild", title: "Last build", r: true },
+  ];
+  var texRows = [];
+  function renderTextures() {
+    var t = S.textures, st = '<span class="s"><b>' + t.count + "</b> textures</span>";
+    if (t.predictedCount) st += '<span class="s key"><b>' + bytes(t.predictedBytes) + "</b> predicted in playable" + (t.predictedCount < t.count ? " (" + t.predictedCount + "/" + t.count + ")" : "") + "</span>";
+    if (t.pending) st += '<span class="s acc"><b>' + (t.saving >= 0 ? "−" : "+") + bytes(Math.abs(t.saving)) + "</b> " + t.pending + " unsaved</span>";
+    setHtml("tStats", st);
+    $("tWarn").hidden = !t.compressedImport; $("tWarn").textContent = "⚠ " + t.compressedImport + " textures reach Luna through Unity's compressed import (orange). Setting their Unity Compression to None usually makes Luna's output smaller.";
+    $("tPredict").disabled = !t.canPredict;
+    if (document.activeElement !== $("tWebp")) $("tWebp").value = S.webpQuality;
+    if (document.activeElement !== $("tJpeg")) $("tJpeg").value = S.jpegQuality;
+    if (document.activeElement !== $("tBulkFormat")) setHtml("tBulkFormat", options(S.textureBulkFormats, $("tBulkFormat").value || 0));
+    if (document.activeElement !== $("tBulkSize")) setHtml("tBulkSize", options(S.textureBulkSizes, $("tBulkSize").value || 0));
+    texRows = filterSort(S.textureRows, "textures", TCOLS);
+    var n = bulkBar("textures", "t", texRows);
+    if (busyIn(document.activeElement)) return;
+    var largest = Math.max.apply(null, [1].concat(texRows.map(function (r) { return r.predicted; })));
+    var html = "<table>" + head("textures", TCOLS, texRows.length && n === texRows.length) + "<tbody>";
+    if (!texRows.length) html += '<tr><td colspan="8" class="empty">' + (q.textures ? "Nothing matches “" + esc(q.textures) + "”." : "No textures listed.") + "</td></tr>";
+    texRows.forEach(function (r) {
+      var sel = detail && detail.kind === "texture" && detail.path === r.path;
+      html += '<tr data-path="' + esc(r.path) + '" class="' + (r.pending ? "pending " : "") + (sel ? "sel " : "") + (r.excluding ? "excluding" : "") + '">'
+        + '<td><input type=checkbox class=ck data-tick="textures"' + (ticked.textures.has(r.path) ? " checked" : "") + "></td>"
+        + '<td><div class="asset" data-open="texture"><img class="thumb" loading="lazy" alt="" src="' + url("/api/thumb", { path: r.path }) + '"><div><div class="name">' + esc(r.name)
+        + (r.pending ? ' <span class="badge accent">unsaved</span>' : "") + (r.excluding ? ' <span class="badge warn">excluding</span>' : "") + '</div><div class="path">' + esc(folderOf(r.path)) + "</div></div></div></td>"
+        + '<td class="r num">' + bytes(r.file) + "</td>"
+        + "<td" + (r.compressedImport ? ' class="warn-text" title="Luna re-encodes this texture from Unity\'s compressed import."' : "") + ">" + esc(r.unityCompression) + "</td>"
+        + '<td><select class="sel sm" data-texformat>' + options(r.formats, r.format) + "</select></td>"
+        + '<td><select class="sel sm" data-texsize>' + options(r.sizes, r.sizeIndex) + "</select></td>"
+        + '<td class="r">' + sizeCell(r, largest) + "</td>"
+        + '<td class="r num muted">' + bytes(r.lastBuild) + (r.lastBuildOld ? " (old)" : "") + "</td></tr>";
+    });
+    setHtml("tTable", html + "</tbody></table>");
+  }
+
+  // ---------------------------------------------------------------- sounds
+  var SCOLS = [
+    { key: "name", title: "Sound" }, { key: "file", title: "Source", r: true }, { key: "format", title: "Format" }, { key: "bitrate", title: "Bitrate" },
+    { key: "channels", title: "Channels" }, { key: "trim", title: "Trim (s)", val: function (r) { return r.trimEnd - r.trimStart; } },
+    { key: "predicted", title: "In playable", r: true }, { key: "lastBuild", title: "Last build", r: true }, { key: "listen", title: "Listen", nosort: true },
+  ];
+  var sndRows = [];
+  function renderSounds() {
+    var d = S.sounds, st = '<span class="s"><b>' + d.count + "</b> sounds</span>";
+    var kept = S.soundRows.reduce(function (a, r) { return a + (r.trimEnd - r.trimStart); }, 0);
+    st += '<span class="s"><b>' + kept.toFixed(1) + " s</b> audio kept</span>";
+    if (d.predictedCount) st += '<span class="s key"><b>' + bytes(d.predictedBytes) + "</b> predicted in playable</span>";
+    if (d.pending) st += '<span class="s acc"><b>' + (d.saving >= 0 ? "−" : "+") + bytes(Math.abs(d.saving)) + "</b> " + d.pending + " unsaved</span>";
+    setHtml("sStats", st);
+    var ban = "";
+    if ((S.staleSoundOverrides || []).length) ban += '<div class="banner warn"><span>' + S.staleSoundOverrides.length + ' Luna sound override(s) name files that no longer exist, so Luna ignores them.</span><div class="spacer"></div><button class="btn sm" id="sFixStale">Fix…</button></div>';
+    if (S.opusCount) ban += '<div class="banner warn" title="' + esc(S.opusRisks) + '">' + S.opusCount + " sound(s) use Opus. Phones that cannot decode it play them silently: Ogg needs iOS 18.4+, WebM about iOS 17.4+. Hover for details.</div>";
+    setHtml("sBanners", ban);
+    $("sPredict").disabled = !d.canPredict;
+    if (document.activeElement !== $("sBulkFormat")) setHtml("sBulkFormat", options(["Format: keep"].concat(S.soundFormats), $("sBulkFormat").value || 0));
+    if (document.activeElement !== $("sBulkChannels")) setHtml("sBulkChannels", options(S.soundBulkChannels, $("sBulkChannels").value || 0));
+    sndRows = filterSort(S.soundRows, "sounds", SCOLS);
+    var n = bulkBar("sounds", "s", sndRows);
+    if (n && !refreshBitrates.busy) refreshBitrates();
+    if (busyIn(document.activeElement)) return;
+    var largest = Math.max.apply(null, [1].concat(sndRows.map(function (r) { return r.predicted; })));
+    var html = "<table>" + head("sounds", SCOLS, sndRows.length && n === sndRows.length) + "<tbody>";
+    if (!sndRows.length) html += '<tr><td colspan="10" class="empty">' + (q.sounds ? "Nothing matches “" + esc(q.sounds) + "”." : "No sounds listed.") + "</td></tr>";
+    sndRows.forEach(function (r) {
+      var sel = detail && detail.kind === "sound" && detail.path === r.path, dis = r.custom ? " disabled" : "";
+      var trimmed = r.trimEnd - r.trimStart < r.length - .01;
+      html += '<tr data-path="' + esc(r.path) + '" class="' + (r.pending ? "pending " : "") + (sel ? "sel " : "") + (r.excluding ? "excluding" : "") + '">'
+        + '<td><input type=checkbox class=ck data-tick="sounds"' + (ticked.sounds.has(r.path) ? " checked" : "") + "></td>"
+        + '<td><div class="asset" data-open="sound"><div class="glyph">♪</div><div><div class="name">' + esc(r.name) + (r.pending ? ' <span class="badge accent">unsaved</span>' : "")
+        + '</div><div class="path">' + esc(folderOf(r.path)) + "</div></div></div></td>"
+        + '<td class="r num">' + esc(r.ext) + " · " + bytes(r.file) + "</td>"
+        + '<td><select class="sel sm" data-sndformat' + dis + ">" + (r.custom ? "<option>Custom script</option>" : options(S.soundFormats, r.format)) + "</select></td>"
+        + '<td><select class="sel sm" data-sndbitrate' + dis + ">" + options(r.bitrates, r.bitrateIndex) + "</select></td>"
+        + '<td><select class="sel sm" data-sndchannels' + dis + ">" + options(r.channelChoices, r.channels) + "</select></td>"
+        + '<td><span class="trimcell"><input class="inp sm num' + (trimmed ? " warn-text" : "") + '" type="number" step="0.01" min="0" data-trim="start" value="' + r.trimStart.toFixed(2) + '"' + dis + '>–<input class="inp sm num' + (trimmed ? " warn-text" : "") + '" type="number" step="0.01" min="0" data-trim="end" value="' + r.trimEnd.toFixed(2) + '"' + dis + "></span></td>"
+        + '<td class="r">' + sizeCell(r, largest) + "</td>"
+        + '<td class="r num muted">' + bytes(r.lastBuild) + "</td>"
+        + '<td><button class="btn sm play" data-play="source" title="Play the source">▶</button> <button class="btn sm" data-play="luna" title="Play what Luna ships">▶ Luna</button></td></tr>';
+    });
+    setHtml("sTable", html + "</tbody></table>");
+  }
+  function refreshBitrates() {
+    refreshBitrates.busy = true;
+    var paths = tickedListed("sounds", sndRows);
+    var fmt = $("sBulkFormat").selectedIndex;
+    return get("/api/sound-bitrates", { paths: paths.join("\n"), format: fmt }).then(function (list) {
+      if (document.activeElement !== $("sBulkBitrate")) {
+        var cur = $("sBulkBitrate").value;
+        setHtml("sBulkBitrate", '<option value="0">Bitrate: keep</option>' + list.map(function (b) { return '<option value="' + b + '"' + (String(b) === cur ? " selected" : "") + ">" + b + " kbps</option>"; }).join(""));
+      }
+    }).finally(function () { setTimeout(function () { refreshBitrates.busy = false; }, 1500); });
+  }
+
+  // ---------------------------------------------------------------- models & other
+  var ACOLS = [
+    { key: "name", title: "Asset" }, { key: "kind", title: "Type" }, { key: "file", title: "File", r: true },
+    { key: "playable", title: "In playable", r: true }, { key: "users", title: "Used by", r: true },
+  ];
+  function renderAssets() {
+    if (!AS) return;
+    var kinds = AS.kinds || [];
+    if (document.activeElement !== $("aKind")) setHtml("aKind", '<option value="">All types</option>' + kinds.map(function (k) { return '<option' + (k === kindFilter ? " selected" : "") + ">" + esc(k) + "</option>"; }).join(""));
+    var rows = AS.rows.filter(function (r) { return !kindFilter || r.kind === kindFilter; });
+    var counts = {}; AS.rows.forEach(function (r) { counts[r.kind] = (counts[r.kind] || 0) + 1; });
+    setHtml("aStats", '<span class="s key"><b>' + AS.rows.length + "</b> other shipped assets</span>" + Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 7).map(function (k) { return '<span class="s"><b>' + counts[k] + "</b> " + esc(k.toLowerCase()) + "</span>"; }).join(""));
+    rows = filterSort(rows, "assets", ACOLS);
+    var n = bulkBar("assets", "a", rows);
+    var largest = Math.max.apply(null, [1].concat(rows.map(function (r) { return r.playable; })));
+    var html = "<table>" + head("assets", ACOLS, rows.length && n === rows.length) + "<tbody>";
+    if (!rows.length) html += '<tr><td colspan="6" class="empty">Nothing listed.</td></tr>';
+    rows.forEach(function (r) {
+      var sel = detail && detail.kind === "asset" && detail.path === r.path;
+      html += '<tr data-path="' + esc(r.path) + '" class="' + (sel ? "sel " : "") + (r.excluding ? "excluding" : "") + '"><td><input type=checkbox class=ck data-tick="assets"' + (ticked.assets.has(r.path) ? " checked" : "") + "></td>"
+        + '<td><div class="asset" data-open="asset"><div class="glyph">◆</div><div><div class="name">' + esc(r.name) + (r.excluding ? ' <span class="badge warn">excluding</span>' : "") + '</div><div class="path">' + esc(r.folder) + "</div></div></div></td>"
+        + "<td>" + esc(r.kind) + '</td><td class="r num">' + bytes(r.file) + '</td><td class="r">' + sizeCell({ predicted: r.playable > 0 ? r.playable : -1 }, largest) + '</td><td class="r num">' + r.users + "</td></tr>";
+    });
+    setHtml("aTable", html + "</tbody></table>");
+  }
+
+  // ---------------------------------------------------------------- used by tree
+  function usedByHtml(u) {
+    if (!u) return '<div class="muted">Not found in the build graph.</div>';
+    if (!u.users.length) return '<div class="muted">Nothing in the build references it directly (Resources or always included).</div>';
+    var roots = []; (function walk(list) { list.forEach(function (l) { if (l.root && roots.indexOf(l.path) < 0) roots.push(l.path); walk(l.users); }); })(u.users);
+    var html = u.consequence ? '<div class="callout">If excluded: ' + esc(u.consequence) + "</div>" : "";
+    if (roots.length) html += '<div class="roots"><span class="muted">Ships because of</span>' + roots.map(function (p) { return '<span class="rootchip" data-ping="' + esc(p) + '">' + esc(fileOf(p)) + "</span>"; }).join("") + "</div>";
+    function node(l) {
+      var h = '<div class="node"><div class="head"><span class="nm" data-ping="' + esc(l.path) + '">' + esc(fileOf(l.path)) + '</span><span class="fd">' + esc(folderOf(l.path)) + "</span>" + (l.root ? '<span class="badge accent">' + esc(l.root) + "</span>" : "") + (l.elsewhere ? '<span class="badge">see above</span>' : "") + "</div>";
+      l.where.forEach(function (w) { h += '<div class="where">uses it in <code>' + esc(w) + "</code></div>"; });
+      if (l.users.length) h += '<div class="kids">' + l.users.map(node).join("") + "</div>";
+      return h + "</div>";
+    }
+    return html + '<div class="tree">' + u.users.map(node).join("") + "</div>";
+  }
+
+  // ---------------------------------------------------------------- drawer
+  function openDrawer(kind, path) { detail = { kind: kind, path: path, data: null }; $("drawer").className = "drawer open"; $("scrim").className = "scrim show"; $("dHead").innerHTML = '<h2>' + esc(fileOf(path)) + "</h2>"; $("dBody").innerHTML = '<div class="muted">Loading…</div>'; lastHtml.dBody = null; loadDetail(); renderView(); if (view === "assets") renderAssets(); }
+  function closeDrawer() { if (!detail) return; detail = null; $("drawer").className = "drawer"; $("scrim").className = "scrim"; renderView(); if (view === "assets") renderAssets(); }
+  function loadDetail() {
+    var d = detail; if (!d) return Promise.resolve();
+    var ep = d.kind === "texture" ? "/api/texture" : d.kind === "sound" ? "/api/sound" : "/api/asset";
+    return get(ep, { path: d.path }).then(function (data) { if (detail !== d) return; d.data = data; renderDrawer(); });
+  }
+  function renderDrawer() {
+    var d = detail; if (!d || !d.data || !S) return;
+    var x = d.data, row = null, html = "", badges = "";
+    if (d.kind === "texture") row = (S.textureRows || []).filter(function (r) { return r.path === d.path; })[0];
+    if (d.kind === "sound") row = (S.soundRows || []).filter(function (r) { return r.path === d.path; })[0];
+    if (row) {
+      badges += row.overrideRule === false ? '<span class="badge">Default rule</span> ' : row.overrideRule ? '<span class="badge">Override</span> ' : "";
+      if (row.pending) badges += '<span class="badge accent">Unsaved</span> ';
+      if (row.compressedImport) badges += '<span class="badge warn">Compressed import</span> ';
+      if (row.decodedImport) badges += '<span class="badge warn" title="Luna decodes Unity\'s imported clip">Decoded import</span> ';
+      if (row.excluding) badges += '<span class="badge warn">Excluding</span> ';
+    }
+    var headHtml = "<h2>" + esc(x.name) + '</h2><div class="small" style="margin-top:2px"><span class="btn link small" data-ping="' + esc(x.path) + '">' + esc(x.path) + "</span></div>" + (badges ? '<div style="margin-top:8px">' + badges + "</div>" : "");
+    setHtml("dHead", headHtml);
+    if (d.kind === "texture" && row) {
+      var bgBtns = ["checker", "black", "white"].map(function (b) { return '<button data-bg="' + b + '" class="' + (previewBg === b ? "on" : "") + '">' + b + "</button>"; }).join("");
+      html += '<div class="row" style="justify-content:space-between;margin-bottom:6px"><div class="segmented">' + bgBtns + '</div><div class="segmented"><button data-pix="0" class="' + (previewPixel ? "" : "on") + '">smooth</button><button data-pix="1" class="' + (previewPixel ? "on" : "") + '">pixels</button></div></div>';
+      var stamp = row.formats[row.format] + row.sizes[row.sizeIndex] + row.quality;
+      html += '<div class="compare' + (previewPixel ? " pixel" : "") + '"><figure><div class="imgbox ' + previewBg + '"><img alt="" src="' + url("/api/texture-image", { kind: "input", path: d.path, v: stamp }) + '"></div><figcaption>Luna input · ' + esc(x.lunaInput || "") + '</figcaption></figure><figure><div class="imgbox ' + previewBg + '"><img alt="" src="' + url("/api/texture-image", { kind: "output", path: d.path, v: stamp }) + '"></div><figcaption>Luna output · ' + esc(x.lunaOutput) + "</figcaption></figure></div>";
+      if (row.predicted >= 0) html += '<div class="metric"><b class="num">' + bytes(row.predicted) + '</b><span class="muted">in playable</span>' + delta(row.delta) + (row.delta ? '<span class="muted small">unsaved</span>' : "") + "</div>";
+      html += '<div class="sec">Luna settings</div><div class="field"><span class="muted">Format</span><select class="sel" data-dtexformat>' + options(row.formats, row.format) + '</select></div><div class="field"><span class="muted">Max size</span><select class="sel" data-dtexsize>' + options(row.sizes, row.sizeIndex) + "</select></div>";
+      if (x.lossy) html += '<div class="field"><span class="muted">Quality</span><div class="row"><input type="range" min="1" max="100" value="' + x.quality + '" data-dtexquality style="flex:1"><b class="num" id="qVal">' + x.quality + "</b></div></div>";
+      html += '<div class="sec">Size</div><div class="kv"><span class="k">Source</span><span>' + esc(x.source) + '</span><span class="k">Unity import</span><span class="' + (x.compressedImport ? "warn-text" : "") + '">' + esc(x.unityImport) + '</span><span class="k">Luna output</span><span>' + esc(x.lunaOutput) + "</span>" + (x.savedBytes >= 0 ? '<span class="k">Saved setting</span><span>' + bytes(x.savedBytes) + " in playable</span>" : "") + '<span class="k">Last build</span><span>' + esc(x.lastBuild) + "</span></div>";
+    }
+    if (d.kind === "sound" && row) {
+      html += '<div class="sec" style="margin-top:4px">Listen &amp; trim</div><div class="muted small">Source</div><audio controls preload="none" src="' + url("/api/audio", { kind: "source", path: d.path }) + '"></audio>';
+      html += '<div class="wave" id="wave"><canvas id="waveCanvas"></canvas><div class="shade l" id="shadeL"></div><div class="shade r" id="shadeR"></div></div>';
+      if (!row.custom) html += '<div class="dual"><input type="range" id="trimA" min="0" max="' + row.length + '" step="0.01" value="' + row.trimStart + '"><input type="range" id="trimB" min="0" max="' + row.length + '" step="0.01" value="' + row.trimEnd + '"></div>'
+        + '<div class="row small"><span class="muted">Start</span><input class="inp sm num" id="trimStartIn" type="number" step="0.01" value="' + row.trimStart.toFixed(2) + '"><span class="muted">End</span><input class="inp sm num" id="trimEndIn" type="number" step="0.01" value="' + row.trimEnd.toFixed(2) + '"><span class="muted" id="keptLbl"></span><div class="spacer"></div><button class="btn sm" id="dTrimSilence">Trim silence</button><button class="btn sm ghost" id="dTrimWhole">Whole clip</button></div>';
+      var lunaV = row.format + row.bitrate + row.channels + row.trimStart + row.trimEnd;
+      html += '<div class="muted small" style="margin-top:12px">Luna output (what ships)</div><audio controls preload="none" src="' + url("/api/audio", { kind: "luna", path: d.path, v: lunaV }) + '"></audio>';
+      if (row.predicted >= 0) html += '<div class="metric"><b class="num">' + bytes(row.predicted) + '</b><span class="muted">in playable</span>' + delta(row.delta) + "</div>";
+      if (!row.custom) html += '<div class="sec">Luna settings</div><div class="field"><span class="muted">Format</span><select class="sel" data-dsndformat>' + options(S.soundFormats, row.format) + '</select></div><div class="field"><span class="muted">Bitrate</span><select class="sel" data-dsndbitrate>' + options(row.bitrates, row.bitrateIndex) + '</select></div><div class="field"><span class="muted">Channels</span><select class="sel" data-dsndchannels>' + options(row.channelChoices, row.channels) + "</select></div>";
+      if (x.opus) html += '<div class="callout" style="margin-top:10px;white-space:pre-line">' + esc(S.opusRisks) + "</div>";
+      html += '<div class="sec">Size</div><div class="kv"><span class="k">Source</span><span>' + esc(x.source) + '</span><span class="k">Luna input</span><span>' + esc(x.lunaInput) + '</span><span class="k">Luna output</span><span>' + esc(x.lunaOutput) + '</span><span class="k">Last build</span><span>' + esc(x.lastBuild) + "</span></div>";
+    }
+    if (d.kind === "asset") {
+      html += '<div class="preview-big"><img id="assetImg" alt="" src="' + url("/api/asset-preview", { path: d.path }) + '"></div>';
+      html += '<div class="metric"><b class="num">' + (x.playable > 0 ? bytes(x.playable) : "–") + '</b><span class="muted">in playable</span></div>';
+      html += '<div class="kv"><span class="k">File</span><span>' + bytes(x.file) + '</span><span class="k">Uses</span><span>' + (x.uses.length ? x.uses.length + " asset(s)" : "nothing") + "</span></div>";
+      if (x.uses.length) html += '<div style="margin:6px 0 0 110px">' + x.uses.slice(0, 20).map(function (u) { return '<div class="small"><span class="btn link small" data-ping="' + esc(u) + '">' + esc(fileOf(u)) + "</span></div>"; }).join("") + (x.uses.length > 20 ? '<div class="muted small">… +' + (x.uses.length - 20) + " more</div>" : "") + "</div>";
+    }
+    html += '<div class="sec">Used by</div>' + usedByHtml(x.usedBy);
+    html += '<div class="acts"><button class="btn" data-ping="' + esc(x.path) + '">Show in Unity</button><button class="btn" data-exclude="' + esc(x.path) + '">Exclude from build…</button></div>';
+    if (busyIn(document.activeElement) || (document.activeElement && document.activeElement.closest && document.activeElement.closest("#dBody") && /INPUT|SELECT/.test(document.activeElement.tagName))) return;
+    if (setHtml("dBody", html) && d.kind === "sound" && row) setupWave(row);
+    if (d.kind === "asset") retryImage($("assetImg"), 8);
+  }
+  function retryImage(img, left) {
+    if (!img) return;
+    img.onerror = function () { if (left > 0) setTimeout(function () { img.src = img.src.replace(/&r=\d+$/, "") + "&r=" + left; retryImage(img, left - 1); }, 900); };
+  }
+
+  // Waveform drawn from the decoded source; the shaded parts are what the trim leaves out.
+  var audioCtx = null, waveCache = {};
+  function setupWave(row) {
+    var canvas = $("waveCanvas"); if (!canvas) return;
+    function draw(buffer) {
+      var w = canvas.clientWidth * devicePixelRatio, h = canvas.clientHeight * devicePixelRatio; canvas.width = w; canvas.height = h;
+      var g = canvas.getContext("2d"); g.clearRect(0, 0, w, h); g.fillStyle = "#7fb3ee";
+      var data = buffer.getChannelData(0), step = Math.max(1, Math.floor(data.length / w)), mid = h / 2;
+      for (var x = 0; x < w; x++) { var min = 1, max = -1; for (var i = x * step, e = Math.min(data.length, i + step); i < e; i++) { var v = data[i]; if (v < min) min = v; if (v > max) max = v; } if (max < min) continue; g.fillRect(x, mid - max * mid, 1, Math.max(1, (max - min) * mid)); }
+    }
+    if (waveCache[row.path]) draw(waveCache[row.path]);
+    else {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      fetch(url("/api/audio", { kind: "source", path: row.path })).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return audioCtx.decodeAudioData(b); })
+        .then(function (buf) { waveCache[row.path] = buf; if (detail && detail.path === row.path) draw(buf); }).catch(function () { });
+    }
+    var a = $("trimA"), b = $("trimB");
+    function shades(s, e) {
+      $("shadeL").style.width = (s / row.length * 100) + "%"; $("shadeR").style.width = ((row.length - e) / row.length * 100) + "%";
+      if ($("keptLbl")) $("keptLbl").textContent = "keeps " + (e - s).toFixed(2) + " of " + row.length.toFixed(2) + " s";
+    }
+    shades(row.trimStart, row.trimEnd);
+    if (!a) return;
+    function live() { var s = Math.min(+a.value, +b.value - .05), e = Math.max(+b.value, s + .05); $("trimStartIn").value = s.toFixed(2); $("trimEndIn").value = e.toFixed(2); shades(s, e); }
+    function commit() { var s = Math.min(+a.value, +b.value), e = Math.max(+a.value, +b.value); act("snd-trim", { path: row.path, start: s, end: e }); }
+    a.oninput = b.oninput = live; a.onchange = b.onchange = commit;
+    $("trimStartIn").onchange = $("trimEndIn").onchange = function () { act("snd-trim", { path: row.path, start: +$("trimStartIn").value, end: +$("trimEndIn").value }); };
+    $("dTrimSilence").onclick = function () { act("trim-silence", { paths: [row.path] }, this); };
+    $("dTrimWhole").onclick = function () { act("snd-trim", { path: row.path, start: 0, end: row.length }, this); };
+  }
+
+  // ---------------------------------------------------------------- exclusions
+  function renderExclusions() {
+    if (!EX) return;
+    if (EX.missing) { setHtml("xPending", '<div class="muted">luna.json not found.</div>'); return; }
+    var p = EX.pending || [], saved = p.reduce(function (a, i) { return a + i.size; }, 0);
+    $("xPendTitle").innerHTML = "Pending (" + p.length + ")" + (saved > 0 ? ' <span class="muted">saves ~' + bytes(saved) + "</span>" : "");
+    $("xApply").disabled = !p.length || (EX.blockers || []).length > 0; $("xClear").disabled = !p.length;
+    setHtml("xBlockers", (EX.blockers || []).map(function (b) { return '<div class="banner bad" style="margin-top:10px">' + esc(b) + "</div>"; }).join(""));
+    setHtml("xPending", p.length ? p.map(function (i) { return xItem(i, true); }).join("") : '<div class="muted" style="margin-top:10px">Nothing pending.</div>');
+    $("xExclTitle").textContent = "Excluded now (" + (EX.excluded || []).length + ")";
+    setHtml("xExcluded", (EX.excluded || []).length ? EX.excluded.map(function (i) { return xItem(i, false); }).join("") : '<div class="muted" style="margin-top:10px">Nothing is excluded yet.</div>');
+  }
+  function xItem(i, pending) {
+    var key = (pending ? "xp:" : "xe:") + i.path, isOpen = open.has(key);
+    var status = !i.exists ? '<span class="badge warn">missing in project</span>' : !i.targets.length ? '<span class="badge">' + (pending ? "not in the build" : "nothing shipped under it") + "</span>"
+      : '<span class="muted small">' + (i.size > 0 ? bytes(i.size) : "size unknown") + '</span> <span class="badge ' + (i.inUse ? "warn" : "good") + '">' + (i.inUse ? i.inUse + " in use" : "unused") + "</span>";
+    var html = '<div class="xitem"><div class="top"><span class="caret muted" data-toggle="' + esc(key) + '" style="cursor:pointer">' + (isOpen ? "▾" : "▸") + '</span><span class="nm" data-toggle="' + esc(key) + '">' + esc(fileOf(i.path)) + (i.folder ? "/ <span class=muted>(folder, " + i.targets.length + " assets)</span>" : "") + '</span><span class="muted small">' + esc(folderOf(i.path)) + '</span><div class="spacer"></div>' + status
+      + (pending ? '<button class="btn sm ghost" data-xremove="' + esc(i.path) + '">Remove</button>' : '<button class="btn sm" data-xreinclude="' + esc(i.path) + '">Re-include</button>') + "</div>";
+    if (isOpen) {
+      html += '<div class="body">';
+      if (i.notShipped) html += '<div class="muted small">Luna does not ship it anyway, so excluding it changes nothing.</div>';
+      i.targets.forEach(function (t) { if (i.folder) html += '<div class="small" style="margin-top:6px"><b>' + esc(t.path.substring(i.path.length + 1)) + "</b></div>"; html += t.users.length ? usedByHtml(t) : '<div class="muted small">Nothing in the build uses it.</div>'; });
+      html += "</div>";
+    }
+    return html + "</div>";
+  }
+
+  // ---------------------------------------------------------------- undo popover
+  function showUndo(button) {
+    get("/api/history").then(function (list) {
+      var pop = $("undoPop"), html = "", section = null;
+      if (!list.length) html = '<div class="hist muted">No saves recorded yet.</div>';
+      list.forEach(function (h) {
+        if (h.section !== section) { section = h.section; html += '<div class="hist-sec">' + esc(h.sectionName) + "</div>"; }
+        html += '<div class="hist" data-undo="' + esc(h.section) + '" data-index="' + h.index + '"><div>Undo · ' + esc(h.label) + '</div><div class="when">' + esc(h.savedAt) + (h.detail ? " · " + esc(h.detail) : "") + "</div></div>";
+      });
+      pop.innerHTML = html;
+      var r = button.getBoundingClientRect(); pop.style.top = (r.bottom + 6) + "px"; pop.style.right = Math.max(12, innerWidth - r.right) + "px";
+      pop.className = "popover show";
+    });
+  }
+
+  // ---------------------------------------------------------------- events
+  document.addEventListener("click", function (ev) {
+    var t = ev.target;
+    if (!t.closest("#undoPop") && !t.closest("#undoBtn")) $("undoPop").className = "popover";
+    if (!S) return;
+    var el;
+    if ((el = t.closest("[data-act]"))) {
+      var c = el.dataset.confirm;
+      if (c) { confirmBox(c, "Please confirm", "Yes").then(function (ok) { if (ok) act(el.dataset.act, null, el); }); } else act(el.dataset.act, null, el);
+      return;
+    }
+    if ((el = t.closest("[data-preset]"))) { act("set-preset", { a: +el.dataset.preset }); return; }
+    if ((el = t.closest("[data-ping]"))) { act("ping", { path: el.dataset.ping }); return; }
+    if ((el = t.closest("[data-locate]"))) { var l = JSON.parse(el.dataset.locate); act("ov-locate", { path: l[0], value: l[1], value2: l[2] }); return; }
+    if ((el = t.closest("[data-toggle]"))) { var k = el.dataset.toggle; if (open.has(k)) open.delete(k); else open.add(k); lastHtml = {}; renderOverview(); renderExclusions(); return; }
+    if ((el = t.closest("[data-reinclude]"))) { act("ov-reinclude", { path: el.dataset.reinclude }, el); return; }
+    if ((el = t.closest("[data-xremove]"))) { act("excl-remove", { path: el.dataset.xremove }); return; }
+    if ((el = t.closest("[data-xreinclude]"))) { var path = el.dataset.xreinclude; confirmBox("Re-include " + path + "? The next Luna build ships it again.", "Re-include", "Re-include").then(function (ok) { if (ok) act("excl-reinclude", { path: path }, el); }); return; }
+    if ((el = t.closest("[data-exclude]"))) { act("excl-add", { paths: [el.dataset.exclude] }).then(function () { location.hash = "#exclusions"; }); return; }
+    if ((el = t.closest("[data-undo]"))) { $("undoPop").className = "popover"; act("undo", { value: el.dataset.undo, a: +el.dataset.index }); return; }
+    if ((el = t.closest("[data-sort]"))) { var p = el.dataset.sort.split(":"), o = sort[p[0]]; if (o.key === p[1]) o.dir = -o.dir; else { o.key = p[1]; o.dir = p[1] === "name" || p[1] === "kind" ? 1 : -1; } lastHtml = {}; renderView(); renderAssets(); return; }
+    if ((el = t.closest("[data-bg]"))) { previewBg = el.dataset.bg; lastHtml.dBody = null; renderDrawer(); return; }
+    if ((el = t.closest("[data-pix]"))) { previewPixel = el.dataset.pix === "1"; lastHtml.dBody = null; renderDrawer(); return; }
+    if ((el = t.closest("[data-play]"))) { var tr = el.closest("tr"), pl = $("player"); pl.src = url("/api/audio", { kind: el.dataset.play, path: tr.dataset.path, v: Date.now() }); pl.play().catch(function () { toast("Could not play this file in the browser.", true); }); return; }
+    if ((el = t.closest("[data-open]"))) { openDrawer(el.dataset.open, el.closest("tr").dataset.path); return; }
+  });
+  document.addEventListener("change", function (ev) {
+    var t = ev.target, tr = t.closest("tr"), path = tr && tr.dataset.path;
+    if (t.dataset.tick) { var set = ticked[t.dataset.tick]; if (t.checked) set.add(path); else set.delete(path); lastHtml = {}; renderView(); renderAssets(); return; }
+    if (t.dataset.tickall) {
+      var tab = t.dataset.tickall, rows = tab === "textures" ? texRows : tab === "sounds" ? sndRows : Array.from(document.querySelectorAll("#aTable tr[data-path]")).map(function (r) { return { path: r.dataset.path }; });
+      rows.forEach(function (r) { if (t.checked) ticked[tab].add(r.path); else ticked[tab].delete(r.path); }); lastHtml = {}; renderView(); renderAssets(); return;
+    }
+    if (t.hasAttribute("data-texformat")) { t.blur(); act("tex-format", { path: path, value: t.value }); return; }
+    if (t.hasAttribute("data-texsize")) { t.blur(); act("tex-size", { path: path, value: t.value }); return; }
+    if (t.hasAttribute("data-sndformat")) { t.blur(); act("snd-format", { path: path, value: t.value }); return; }
+    if (t.hasAttribute("data-sndbitrate")) { t.blur(); act("snd-bitrate", { path: path, value: t.value }); return; }
+    if (t.hasAttribute("data-sndchannels")) { t.blur(); act("snd-channels", { path: path, value: t.value }); return; }
+    if (t.dataset.trim) { var cells = tr.querySelectorAll("[data-trim]"); t.blur(); act("snd-trim", { path: path, start: +cells[0].value, end: +cells[1].value }); return; }
+    if (t.hasAttribute("data-dtexformat")) { t.blur(); act("tex-format", { path: detail.path, value: t.value }); return; }
+    if (t.hasAttribute("data-dtexsize")) { t.blur(); act("tex-size", { path: detail.path, value: t.value }); return; }
+    if (t.hasAttribute("data-dtexquality")) { t.blur(); act("tex-quality", { path: detail.path, a: +t.value }); return; }
+    if (t.hasAttribute("data-dsndformat")) { t.blur(); act("snd-format", { path: detail.path, value: t.value }); return; }
+    if (t.hasAttribute("data-dsndbitrate")) { t.blur(); act("snd-bitrate", { path: detail.path, value: t.value }); return; }
+    if (t.hasAttribute("data-dsndchannels")) { t.blur(); act("snd-channels", { path: detail.path, value: t.value }); return; }
+    if (t.dataset.module) { act("ov-module", { value: t.dataset.module, flag: t.checked }); return; }
+  });
+  document.addEventListener("input", function (ev) { if (ev.target.hasAttribute("data-dtexquality") && $("qVal")) $("qVal").textContent = ev.target.value; });
+
+  $("sceneSel").onchange = function () { var v = this.value; this.blur(); act("scene", { path: v }); };
+  $("undoBtn").onclick = function () { if ($("undoPop").className.indexOf("show") >= 0) $("undoPop").className = "popover"; else showUndo(this); };
+  $("hMeasure").onclick = function () { act(S.measuring ? "cancel-measure" : "measure", null, this); };
+  $("oMeasure").onclick = function () { act(OV && OV.measuring ? "cancel-measure" : "measure", null, this); };
+  $("oAuto").onchange = function () { act("ov-auto", { flag: this.checked }); };
+  $("oSpeed").onchange = function () { act("ov-speedup", { flag: this.checked }); };
+  $("oNet").onchange = function () { var v = this.value; this.blur(); act("ov-network", { value: v }); };
+  $("oBody").addEventListener("click", function (ev) {
+    if (ev.target.id === "oWhatIf") act("ov-whatif", null, ev.target);
+    if (ev.target.id === "oApplyPlan") act("ov-apply-plan", null, ev.target);
+    if (ev.target.id === "oResetPlan") act("ov-reset-plan", null, ev.target);
+  });
+  $("sBanners").addEventListener("click", function (ev) { if (ev.target.id === "sFixStale") confirmBox(S.staleSoundPlan + "\n\nMoved overrides keep their bitrate and channels.", "Fix stale sound overrides", "Fix").then(function (ok) { if (ok) act("snd-repair-stale", null, ev.target); }); });
+  $("tSmallest").onclick = function () { act("tex-smallest", { paths: texRows.map(function (r) { return r.path; }) }, this); };
+  $("tWebp").onchange = $("tJpeg").onchange = function () { act("tex-qualities", { a: +$("tWebp").value, b: +$("tJpeg").value }); };
+  $("tSources").onchange = function () { var v = this.value; this.value = ""; if (v) { toast("Confirm in Unity: the dialog is waiting there."); act(v, null); } };
+  $("tBulkApply").onclick = function () { act("tex-bulk", { paths: tickedListed("textures", texRows), a: $("tBulkFormat").selectedIndex, b: $("tBulkSize").selectedIndex }, this); };
+  $("tBulkSmallest").onclick = function () { act("tex-smallest", { paths: tickedListed("textures", texRows) }, this); };
+  $("tBulkExclude").onclick = function () { act("excl-add", { paths: tickedListed("textures", texRows) }).then(function () { location.hash = "#exclusions"; }); };
+  $("tBulkClear").onclick = function () { ticked.textures.clear(); lastHtml = {}; renderTextures(); };
+  $("sBulkFormat").onchange = function () { refreshBitrates(); };
+  $("sBulkApply").onclick = function () { act("snd-bulk", { paths: tickedListed("sounds", sndRows), a: $("sBulkFormat").selectedIndex, b: +$("sBulkBitrate").value || 0, c: $("sBulkChannels").selectedIndex }, this); };
+  $("sBulkTrim").onclick = function () { act("trim-silence", { paths: tickedListed("sounds", sndRows) }, this); };
+  $("sBulkExclude").onclick = function () { act("excl-add", { paths: tickedListed("sounds", sndRows) }).then(function () { location.hash = "#exclusions"; }); };
+  $("sBulkClear").onclick = function () { ticked.sounds.clear(); lastHtml = {}; renderSounds(); };
+  $("sStop").onclick = function () { $("player").pause(); document.querySelectorAll("audio").forEach(function (a) { a.pause(); }); };
+  $("aKind").onchange = function () { kindFilter = this.value; lastHtml = {}; renderAssets(); };
+  $("aBulkExclude").onclick = function () { act("excl-add", { paths: Array.from(ticked.assets) }).then(function () { ticked.assets.clear(); location.hash = "#exclusions"; }); };
+  $("aBulkClear").onclick = function () { ticked.assets.clear(); lastHtml = {}; renderAssets(); };
+  $("xApply").onclick = function () { var btn = this; confirmBox("Write the pending exclusions to Luna (one undoable change)? Your project files are not changed.", "Apply exclusions", "Apply").then(function (ok) { if (ok) act("excl-apply", null, btn); }); };
+  $("xClear").onclick = function () { act("excl-clear"); };
+  $("dClose").onclick = closeDrawer; $("scrim").onclick = closeDrawer;
+  [["tSearch", "textures"], ["sSearch", "sounds"], ["aSearch", "assets"], ["oSearch", "overview"]].forEach(function (p) {
+    $(p[0]).addEventListener("input", function () { q[p[1]] = this.value; lastHtml = {}; if (p[1] === "overview") renderOverview(); else if (p[1] === "assets") renderAssets(); else renderView(); });
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") { if ($("modalBack").className.indexOf("show") >= 0) return; closeDrawer(); }
+    if (ev.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) {
+      var s = { textures: "tSearch", sounds: "sSearch", assets: "aSearch", overview: "oSearch" }[view]; if (s) { ev.preventDefault(); $(s).focus(); }
+    }
+  });
+  window.addEventListener("hashchange", route);
+
+  route();
+  setInterval(function () {
+    if (document.hidden) return;
+    refreshState();
+    if (view === "overview" && OV && (OV.measuring || OV.auto)) loadOverview();
+    if (detail && detail.kind !== "asset") renderDrawer();
+  }, 2000);
+})();
+</script>
+</body>
+</html>

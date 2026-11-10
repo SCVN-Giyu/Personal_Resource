@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luna Optimizer · waiting for Unity</title>
+<style>
+  :root { --bg: #16181d; --surface: #1f2228; --border: #2f343d; --text: #e7e9ee; --muted: #9aa1ad; --accent: #4c8dde; --good: #4cb35c; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f4f5f7; --surface: #fff; --border: #e1e4ea; --text: #1b1f27; --muted: #5f6775; --accent: #2f6fc0; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; padding: 24px; }
+  .card { width: 100%; max-width: 520px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 30px 32px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; margin-bottom: 20px; }
+  .logo { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, #4c8dde, #7c5cff); display: grid; place-items: center; color: #fff; }
+  .status { display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 650; margin-bottom: 6px; }
+  .spinner { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--accent); border-right-color: transparent; animation: spin .9s linear infinite; }
+  .ok { width: 18px; height: 18px; border-radius: 50%; background: var(--good); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .muted { color: var(--muted); }
+  ol { padding-left: 20px; margin: 18px 0 0; color: var(--muted); }
+  li { margin: 6px 0; }
+  b { color: var(--text); }
+  .list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+  a.btn { display: block; padding: 10px 14px; border-radius: 10px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 650; text-align: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand"><div class="logo">◐</div>Luna Optimizer</div>
+  <div class="status"><span class="spinner" id="icon"></span><span id="title">Waiting for Unity…</span></div>
+  <div class="muted" id="detail">Checking this computer every few seconds. This page opens the tool by itself once Unity is ready.</div>
+  <div class="list" id="list"></div>
+  <ol id="steps">
+    <li>Open your project in <b>Unity</b>.</li>
+    <li>First time only: choose <b>Supercent → Luna Optimizer (Browser)</b>. After that it starts by itself whenever Unity opens the project.</li>
+    <li>Keep this tab open; it switches to the tool automatically.</li>
+  </ol>
+</div>
+<script>
+(function () {
+  "use strict";
+  // Ports the Unity server tries, in order (LunaOptimizerWebServer: FIRST_PORT 47790, 10 attempts).
+  var PORTS = [47790, 47791, 47792, 47793, 47794, 47795, 47796, 47797, 47798, 47799];
+  var INTERVAL_MS = 1500;
+
+  // An image request works from a local file without any special permission; it loads only if Unity answers.
+  function probe(port) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      var done = false;
+      var timer = setTimeout(function () { if (!done) { done = true; resolve(null); } }, 1200);
+      img.onload = function () { if (!done) { done = true; clearTimeout(timer); resolve(port); } };
+      img.onerror = function () { if (!done) { done = true; clearTimeout(timer); resolve(null); } };
+      img.src = "http://127.0.0.1:" + port + "/ping?t=" + Date.now();
+    });
+  }
+
+  function check() {
+    Promise.all(PORTS.map(probe)).then(function (found) {
+      found = found.filter(Boolean);
+      if (found.length === 1) {
+        document.getElementById("icon").className = "ok";
+        document.getElementById("title").textContent = "Unity is ready. Opening…";
+        location.href = "http://127.0.0.1:" + found[0] + "/";
+        return;
+      }
+      if (found.length > 1) {
+        // Several Unity projects run the tool: let the user pick (each page shows its project name).
+        document.getElementById("icon").className = "ok";
+        document.getElementById("title").textContent = found.length + " Unity projects are ready";
+        document.getElementById("detail").textContent = "Pick one. Each opens with its project name at the top.";
+        document.getElementById("steps").style.display = "none";
+        document.getElementById("list").innerHTML = found.map(function (port) {
+          return '<a class="btn" href="http://127.0.0.1:' + port + '/">Open the one on port ' + port + "</a>";
+        }).join("");
+      }
+      setTimeout(check, INTERVAL_MS);
+    });
+  }
+  check();
+})();
+</script>
+</body>
+</html>

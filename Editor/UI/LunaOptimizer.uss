@@ -1,10 +1,72 @@
 /* Luna Optimizer hub. Colours come from Unity's editor variables so light and dark skins both work. */
 
 .lo-header {
-    height: 26px;
+    height: 30px;
     align-items: center;
     padding-left: 6px;
-    padding-right: 2px;
+    padding-right: 4px;
+}
+
+.lo-header > ToolbarButton,
+.lo-header > .unity-toolbar-button {
+    height: 22px;
+    border-radius: 3px;
+    margin-left: 2px;
+    border-left-width: 0;
+    border-right-width: 0;
+}
+
+/* Simple | Manual segmented switch */
+.lo-mode-switch {
+    flex-direction: row;
+    margin-right: 10px;
+    padding: 2px;
+    border-radius: 5px;
+    background-color: rgba(0, 0, 0, 0.22);
+}
+
+.lo-mode {
+    height: 20px;
+    min-width: 60px;
+    padding-left: 10px;
+    padding-right: 10px;
+    border-radius: 4px;
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+    -unity-text-align: middle-center;
+    opacity: 0.75;
+}
+
+.lo-mode:hover {
+    opacity: 1;
+}
+
+.lo-mode:checked {
+    background-color: rgb(58, 121, 187);
+    color: rgb(255, 255, 255);
+    -unity-font-style: bold;
+    opacity: 1;
+}
+
+/* Accent for the one action that matters most in a group */
+.lo-primary {
+    background-color: rgb(58, 121, 187);
+    border-color: rgb(46, 98, 153);
+    color: rgb(255, 255, 255);
+    -unity-font-style: bold;
+}
+
+.lo-primary:hover {
+    background-color: rgb(72, 138, 207);
+}
+
+.lo-primary:active {
+    background-color: rgb(46, 98, 153);
+}
+
+.lo-primary:disabled {
+    background-color: rgba(58, 121, 187, 0.35);
+    color: rgba(255, 255, 255, 0.5);
 }
 
 .lo-budget-label {
@@ -39,30 +101,51 @@
 }
 
 .lo-pending {
-    color: var(--unity-colors-label-text-focus);
     margin-right: 6px;
-    -unity-font-style: bold;
 }
 
 .lo-tabs {
     flex-direction: row;
-    padding-left: 4px;
-    padding-top: 4px;
+    padding-left: 6px;
     border-bottom-width: 1px;
     border-bottom-color: var(--unity-colors-toolbar-border);
 }
 
+/* Underlined tabs: icon, title, unsaved badge; the active one carries the accent. */
 .lo-tab {
-    min-width: 90px;
-    height: 24px;
-    -unity-text-align: middle-center;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
+    flex-direction: row;
+    align-items: center;
+    height: 30px;
+    padding-left: 12px;
+    padding-right: 12px;
     margin-right: 2px;
+    border-bottom-width: 2px;
+    border-bottom-color: rgba(0, 0, 0, 0);
+    opacity: 0.7;
 }
 
-.lo-tab:checked {
+.lo-tab:hover {
+    opacity: 1;
+    background-color: rgba(128, 128, 128, 0.12);
+}
+
+.lo-tab--active {
+    opacity: 1;
+    border-bottom-color: rgb(58, 121, 187);
+}
+
+.lo-tab--active > .lo-tab-title {
     -unity-font-style: bold;
+}
+
+.lo-tab-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+}
+
+.lo-tab-badge {
+    margin-left: 6px;
 }
 
 .lo-content {
@@ -80,10 +163,12 @@
 }
 
 .lo-summary {
-    margin: 3px 6px 0 6px;
+    margin: 4px 6px 0 6px;
+    padding: 3px 6px;
     font-size: 11px;
-    -unity-font-style: bold;
     white-space: normal;
+    border-radius: 3px;
+    background-color: rgba(128, 128, 128, 0.1);
 }
 
 .lo-warning {
@@ -93,7 +178,27 @@
 .lo-bulkbar {
     flex-direction: row;
     align-items: center;
-    margin: 4px 4px 4px 6px;
+    min-height: 30px;
+    margin: 4px 6px 6px 6px;
+    padding: 2px 8px;
+    border-radius: 5px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0);
+}
+
+.lo-bulkbar--active {
+    border-color: rgba(58, 121, 187, 0.6);
+    background-color: rgba(58, 121, 187, 0.14);
+}
+
+.lo-bulk-edit {
+    flex-direction: row;
+    align-items: center;
+}
+
+.lo-bulk-edit > Button {
+    height: 22px;
+    border-radius: 4px;
 }
 
 .lo-bulk-all {
@@ -101,8 +206,9 @@
 }
 
 .lo-bulk-count {
-    min-width: 90px;
     -unity-text-align: middle-left;
+    -unity-font-style: bold;
+    margin-right: 8px;
 }
 
 .lo-bulk-field {
@@ -138,6 +244,7 @@
 
 .lo-cell > DropdownField {
     margin: 0;
+    height: 20px;
 }
 
 .lo-pending-cell {
@@ -146,13 +253,20 @@
 }
 
 .lo-details {
-    padding: 6px 8px;
-    min-width: 260px;
+    min-width: 280px;
+    border-left-width: 1px;
+    border-left-color: rgba(0, 0, 0, 0.3);
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+.lo-details-content {
+    padding: 10px 12px 16px 12px;
 }
 
 .lo-details-title {
-    font-size: 14px;
+    font-size: 15px;
     -unity-font-style: bold;
+    white-space: normal;
 }
 
 .lo-preview {
@@ -164,21 +278,33 @@
 
 .lo-section-title {
     -unity-font-style: bold;
-    margin-top: 10px;
-    margin-bottom: 2px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    opacity: 0.6;
+    margin-top: 16px;
+    margin-bottom: 4px;
+    padding-bottom: 3px;
     border-bottom-width: 1px;
-    border-bottom-color: var(--unity-colors-default-border);
+    border-bottom-color: rgba(128, 128, 128, 0.25);
 }
 
 .lo-info-row {
     flex-direction: row;
-    margin-top: 1px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(128, 128, 128, 0.1);
 }
 
 .lo-info-key {
-    width: 90px;
+    width: 100px;
     color: var(--unity-colors-label-text);
-    opacity: 0.7;
+    opacity: 0.6;
+}
+
+.lo-info-value {
+    flex-shrink: 1;
+    white-space: normal;
 }
 
 .lo-row {
@@ -212,9 +338,16 @@
     -unity-text-align: middle-center;
 }
 
+.lo-details-actions {
+    flex-direction: row;
+    margin-top: 16px;
+}
+
 .lo-details-button {
-    margin-top: 12px;
-    height: 24px;
+    flex-grow: 1;
+    height: 26px;
+    margin: 0 4px 0 0;
+    border-radius: 4px;
 }
 
 .lo-banner {
@@ -318,4 +451,736 @@
 
 .lo-quality-field > .unity-base-field__input {
     min-width: 30px;
+}
+
+/* ---------------------------------------------------------------- Simple mode */
+
+.lo-simple {
+    flex-grow: 1;
+}
+
+.lo-simple-content {
+    padding: 10px 12px 16px 12px;
+}
+
+.lo-card {
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.07);
+    background-color: rgba(255, 255, 255, 0.035);
+}
+
+.lo-card-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.lo-card-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+}
+
+.lo-card-title {
+    -unity-font-style: bold;
+    font-size: 13px;
+}
+
+.lo-card-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-left: -5px;
+    margin-right: -5px;
+}
+
+.lo-action-card {
+    flex-grow: 1;
+    flex-basis: 260px;
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.lo-card-stat {
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.lo-action {
+    height: 26px;
+    margin: 3px 0 0 0;
+    border-radius: 4px;
+}
+
+.lo-link-button {
+    align-self: flex-start;
+    margin: 8px 0 0 0;
+    padding: 0;
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgb(115, 179, 255);
+}
+
+.lo-link-button:hover {
+    -unity-font-style: bold;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.lo-muted {
+    opacity: 0.65;
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+.lo-wrap {
+    white-space: normal;
+}
+
+.lo-preset-field {
+    margin: 0 0 2px 0;
+}
+
+.lo-preset-field > Label {
+    min-width: 90px;
+}
+
+/* Size card */
+.lo-size-line {
+    flex-direction: row;
+    align-items: flex-end;
+}
+
+.lo-size-total {
+    font-size: 26px;
+    -unity-font-style: bold;
+    margin-right: 8px;
+}
+
+.lo-size-limit {
+    font-size: 14px;
+    opacity: 0.65;
+    margin-bottom: 4px;
+}
+
+.lo-size-line > .lo-action {
+    min-width: 130px;
+    height: 30px;
+    align-self: center;
+}
+
+.lo-meter {
+    height: 12px;
+    margin-top: 8px;
+    border-radius: 6px;
+    background-color: rgba(128, 128, 128, 0.22);
+    overflow: hidden;
+}
+
+.lo-meter-fill {
+    height: 100%;
+    border-radius: 6px;
+    background-color: rgb(77, 179, 89);
+}
+
+.lo-meter-fill--warn {
+    background-color: rgb(242, 166, 26);
+}
+
+.lo-meter-fill--over {
+    background-color: rgb(217, 64, 51);
+}
+
+/* What ships */
+.lo-category-list {
+    margin-top: 4px;
+}
+
+.lo-category-row {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    padding-left: 4px;
+    padding-right: 4px;
+    border-radius: 3px;
+}
+
+.lo-category-row:hover {
+    background-color: rgba(128, 128, 128, 0.15);
+}
+
+.lo-category-name {
+    width: 150px;
+}
+
+.lo-category-count {
+    width: 40px;
+    -unity-text-align: middle-right;
+    opacity: 0.6;
+    margin-right: 10px;
+}
+
+.lo-category-bar {
+    flex-grow: 1;
+    height: 8px;
+    border-radius: 4px;
+    background-color: rgba(128, 128, 128, 0.15);
+    overflow: hidden;
+}
+
+.lo-category-fill {
+    height: 100%;
+    border-radius: 4px;
+    background-color: rgb(58, 121, 187);
+}
+
+.lo-category-size {
+    width: 80px;
+    -unity-text-align: middle-right;
+    -unity-font-style: bold;
+}
+
+.lo-category-share {
+    width: 40px;
+    -unity-text-align: middle-right;
+    opacity: 0.6;
+}
+
+/* Unsaved changes banner */
+.lo-pending-card {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgba(58, 121, 187, 0.6);
+    background-color: rgba(58, 121, 187, 0.16);
+}
+
+.lo-pending-text {
+    -unity-font-style: bold;
+}
+
+.lo-pending-card > .lo-action {
+    margin: 0 0 0 6px;
+    min-width: 70px;
+}
+
+/* ---------------------------------------------------------------- sound trim */
+
+.lo-trim-cell {
+    flex-direction: row;
+    align-items: center;
+}
+
+.lo-trim-cell > Label {
+    margin-left: 1px;
+    margin-right: 1px;
+}
+
+.lo-trim-field {
+    width: 52px;
+    margin: 0;
+}
+
+.lo-trim-field > .unity-base-field__input {
+    min-width: 0;
+}
+
+.lo-trimmed .lo-trim-field > .unity-base-field__input {
+    color: rgb(115, 179, 255);
+}
+
+.lo-wave {
+    overflow: hidden;
+}
+
+.lo-trim-shade {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.55);
+}
+
+.lo-trim-shade--left {
+    left: 0;
+    border-right-width: 2px;
+    border-right-color: rgb(242, 166, 26);
+}
+
+.lo-trim-shade--right {
+    right: 0;
+    border-left-width: 2px;
+    border-left-color: rgb(242, 166, 26);
+}
+
+.lo-trim-editor {
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.lo-trim-slider {
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.lo-trim-detail-field {
+    width: 110px;
+    margin-left: 0;
+    margin-right: 8px;
+}
+
+.lo-trim-detail-field > Label {
+    min-width: 36px;
+    width: 36px;
+}
+
+.lo-trim-kept {
+    opacity: 0.7;
+}
+
+.lo-trim-editor .lo-small-button {
+    margin-right: 4px;
+}
+
+/* Light editor skin */
+.lo-light .lo-card {
+    border-color: rgba(0, 0, 0, 0.1);
+    background-color: rgba(255, 255, 255, 0.45);
+}
+
+.lo-light .lo-mode-switch {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.lo-light .lo-link-button {
+    color: rgb(26, 89, 204);
+}
+
+.lo-light .lo-trimmed .lo-trim-field > .unity-base-field__input {
+    color: rgb(20, 100, 210);
+}
+
+.lo-light .lo-trim-shade {
+    background-color: rgba(255, 255, 255, 0.6);
+}
+
+/* ---------------------------------------------------------------- Manual tabs: shared pieces */
+
+.lo-tab-toolbar {
+    height: 26px;
+    align-items: center;
+}
+
+.lo-icon-button {
+    width: 28px;
+    align-items: center;
+    justify-content: center;
+}
+
+.lo-icon-button > Image {
+    width: 16px;
+    height: 16px;
+}
+
+/* Stat chips above a table */
+.lo-stats {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 6px 6px 0 6px;
+}
+
+.lo-stat {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    padding-left: 8px;
+    padding-right: 8px;
+    margin: 0 6px 4px 0;
+    border-radius: 11px;
+    background-color: rgba(128, 128, 128, 0.14);
+}
+
+.lo-stat-value {
+    -unity-font-style: bold;
+    margin-right: 4px;
+}
+
+.lo-stat-caption {
+    opacity: 0.65;
+}
+
+.lo-stat--key {
+    background-color: rgba(77, 179, 89, 0.2);
+}
+
+.lo-stat--accent {
+    background-color: rgba(58, 121, 187, 0.28);
+}
+
+/* Badges */
+.lo-badge {
+    font-size: 10px;
+    -unity-font-style: bold;
+    height: 16px;
+    padding: 0 6px;
+    margin: 0 4px 0 0;
+    border-radius: 8px;
+    -unity-text-align: middle-center;
+    background-color: rgba(128, 128, 128, 0.25);
+}
+
+.lo-badge--accent {
+    background-color: rgb(58, 121, 187);
+    color: rgb(255, 255, 255);
+}
+
+.lo-badge--warn {
+    background-color: rgba(242, 153, 26, 0.3);
+    color: rgb(255, 196, 110);
+}
+
+/* Size column: text over a faint bar against the largest listed */
+.lo-size-cell {
+    flex-grow: 1;
+    flex-direction: row;
+    align-items: center;
+}
+
+.lo-size-cell > Label {
+    flex-grow: 1;
+    -unity-text-align: middle-right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lo-size-track {
+    width: 34px;
+    height: 5px;
+    flex-shrink: 0;
+    border-radius: 3px;
+    background-color: rgba(128, 128, 128, 0.2);
+    overflow: hidden;
+}
+
+.lo-size-heat {
+    height: 100%;
+    border-radius: 3px;
+    background-color: rgb(88, 151, 217);
+}
+
+/* Details header and metric */
+.lo-details-header {
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+}
+
+.lo-details-path {
+    font-size: 10px;
+    opacity: 0.8;
+    margin-top: 1px;
+    white-space: normal;
+}
+
+.lo-badges {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+.lo-metric {
+    flex-direction: row;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    margin-bottom: 2px;
+}
+
+.lo-metric-value {
+    font-size: 20px;
+    -unity-font-style: bold;
+    margin-right: 6px;
+}
+
+.lo-metric-caption {
+    opacity: 0.6;
+    margin-bottom: 3px;
+    margin-right: 8px;
+}
+
+.lo-metric-delta {
+    -unity-font-style: bold;
+    margin-bottom: 3px;
+    padding: 0 6px;
+    border-radius: 8px;
+}
+
+.lo-metric-delta--down {
+    color: rgb(110, 210, 120);
+    background-color: rgba(77, 179, 89, 0.18);
+}
+
+.lo-metric-delta--up {
+    color: rgb(240, 120, 100);
+    background-color: rgba(217, 64, 51, 0.18);
+}
+
+.lo-preview {
+    border-radius: 4px;
+}
+
+/* Table header */
+.lo-table .unity-multi-column-header__column {
+    -unity-font-style: bold;
+}
+
+/* Light skin */
+.lo-light .lo-details {
+    border-left-color: rgba(0, 0, 0, 0.15);
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+.lo-light .lo-badge--warn {
+    color: rgb(140, 80, 0);
+}
+
+.lo-light .lo-metric-delta--down {
+    color: rgb(30, 120, 45);
+}
+
+.lo-light .lo-metric-delta--up {
+    color: rgb(170, 40, 30);
+}
+
+/* ---------------------------------------------------------------- search bar (left of the table bar) */
+
+.lo-searchbar {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 1;
+}
+
+.lo-search-box {
+    flex-direction: row;
+    align-items: center;
+    width: 340px;
+    flex-shrink: 1;
+    height: 24px;
+    padding-left: 6px;
+    padding-right: 2px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.35);
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.lo-search-box:hover {
+    border-color: rgba(128, 128, 128, 0.6);
+}
+
+.lo-search-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    opacity: 0.8;
+    margin-right: 2px;
+}
+
+.lo-search-input {
+    flex-grow: 1;
+    margin: 0;
+}
+
+.lo-search-input > .unity-base-field__input,
+.lo-search-input > .unity-text-field__input {
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+    padding-left: 2px;
+}
+
+.lo-search-placeholder {
+    position: absolute;
+    left: 26px;
+    top: 0;
+    bottom: 0;
+    -unity-text-align: middle-left;
+    opacity: 0.45;
+}
+
+.lo-search-clear {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    border-radius: 9px;
+    border-width: 0;
+    background-color: rgba(128, 128, 128, 0.3);
+    -unity-font-style: bold;
+}
+
+.lo-search-count {
+    margin-left: 8px;
+    opacity: 0.7;
+}
+
+.lo-search-count--none {
+    color: rgb(242, 153, 26);
+    opacity: 1;
+}
+
+.lo-bulk-hint {
+    margin-right: 4px;
+}
+
+.lo-header-toggle {
+    margin: 0;
+    align-self: center;
+    justify-content: center;
+    flex-grow: 1;
+}
+
+/* ---------------------------------------------------------------- Used by */
+
+.lo-usedby {
+    margin-top: 2px;
+}
+
+.lo-callout {
+    padding: 6px 8px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    border-left-width: 3px;
+    border-left-color: rgba(128, 128, 128, 0.6);
+    background-color: rgba(128, 128, 128, 0.12);
+}
+
+.lo-callout--warn {
+    border-left-color: rgb(242, 153, 26);
+    background-color: rgba(242, 153, 26, 0.12);
+}
+
+.lo-callout-text {
+    white-space: normal;
+}
+
+.lo-usedby-roots {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.lo-usedby-caption {
+    opacity: 0.6;
+    margin-right: 6px;
+}
+
+.lo-root-chip {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px 0 4px;
+    margin: 0 4px 2px 0;
+    border-radius: 11px;
+    background-color: rgba(58, 121, 187, 0.25);
+    cursor: link;
+}
+
+.lo-root-chip:hover {
+    background-color: rgba(58, 121, 187, 0.45);
+}
+
+.lo-root-kind {
+    font-size: 10px;
+    opacity: 0.7;
+    margin-left: 4px;
+}
+
+.lo-tree-node {
+    margin-top: 2px;
+}
+
+.lo-tree-head {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    min-height: 20px;
+}
+
+.lo-tree-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+}
+
+.lo-tree-name {
+    -unity-font-style: bold;
+    margin-right: 6px;
+}
+
+.lo-tree-folder {
+    font-size: 10px;
+    opacity: 0.5;
+    margin-right: 6px;
+}
+
+.lo-tree-where {
+    flex-direction: row;
+    align-items: flex-start;
+    margin-left: 20px;
+    margin-bottom: 2px;
+}
+
+.lo-tree-where-caption {
+    font-size: 10px;
+    opacity: 0.5;
+    margin-right: 4px;
+    margin-top: 2px;
+}
+
+.lo-tree-where-text {
+    flex-shrink: 1;
+    white-space: normal;
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background-color: rgba(128, 128, 128, 0.15);
+}
+
+.lo-tree-children {
+    margin-left: 7px;
+    padding-left: 12px;
+    border-left-width: 1px;
+    border-left-color: rgba(128, 128, 128, 0.35);
+}
+
+.lo-light .lo-search-box {
+    border-color: rgba(0, 0, 0, 0.2);
+    background-color: rgba(255, 255, 255, 0.6);
+}
+
+/* ---------------------------------------------------------------- Overview (IMGUI inside a UI Toolkit frame) */
+
+.lo-imgui-toolbar {
+    height: 21px;
+    flex-shrink: 0;
+}
+
+.lo-imgui-body {
+    flex-grow: 1;
+}
+
+.lo-listen {
+    flex-direction: row;
+    align-items: center;
+}
+
+.lo-listen > Button {
+    height: 18px;
+    margin: 0 2px 0 0;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-size: 11px;
 }

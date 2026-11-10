@@ -10,14 +10,16 @@ using UnityEngine.UIElements;
 namespace Supercent.LunaTextureOptimizer.Editor
 {
     // One window for everything Luna ships, built with UI Toolkit: a header that always shows the playable size and
-    // unsaved changes, a tab bar, and the active tab below. Tabs not yet converted to UI Toolkit run inside an
-    // IMGUIContainer. Tabs are enabled the first time they are shown.
+    // unsaved changes, then either Simple mode (size, what ships, one-click actions) or Manual mode (a tab bar and the
+    // active tab). Tabs not yet converted to UI Toolkit run inside an IMGUIContainer. Tabs are enabled the first time
+    // they are shown; Simple mode enables the Textures and Sounds tabs it drives.
     public class LunaOptimizerWindow : EditorWindow
     {
         const string MENU_PATH = "Supercent/Luna Optimizer";
         const string STYLE_PATH = "Packages/com.supercent.luna-texture-optimizer/Editor/UI/LunaOptimizer.uss";
         const long HEADER_REFRESH_MS = 300;
         const float WARN_RATIO = 0.85f;
+        const string SIMPLE_MODE_PREF = "LunaOptimizer.SimpleMode";
 
         public enum Tab
         {
@@ -45,9 +47,16 @@ namespace Supercent.LunaTextureOptimizer.Editor
         ToolbarButton saveButton;
         ToolbarButton discardButton;
         ToolbarButton exclusionsButton;
-        readonly List<ToolbarToggle> tabToggles = new List<ToolbarToggle>();
+        readonly List<VisualElement> tabButtons = new List<VisualElement>();
+
         VisualElement contentHost;
+        VisualElement tabBar;
         readonly Dictionary<OptimizerView, VisualElement> tabElements = new Dictionary<OptimizerView, VisualElement>();
+        bool simpleMode;
+        SimpleModeView simple;
+        VisualElement simpleElement;
+        ToolbarToggle simpleToggle;
+        ToolbarToggle manualToggle;
 
         [MenuItem(MENU_PATH)]
         static void Open()
@@ -58,6 +67,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
         public static void OpenTab(Tab tab)
         {
             var window = GetWindow<LunaOptimizerWindow>("Luna Optimizer");
+            window.SetSimpleMode(false);
             window.SelectTab(tab);
         }
 
@@ -67,6 +77,123 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             var hub = Resources.FindObjectsOfTypeAll<LunaOptimizerWindow>().FirstOrDefault();
             return hub != null && hub.overview.IsEnabled ? hub.overview.SizeOf(assetPath) : 0;
+        }
+
+        // ---------------------------------------------------------------- for the browser page (LunaOptimizerWebServer)
+
+        // The open hub, or a new one opened without taking focus.
+        public static LunaOptimizerWindow Hub()
+        {
+            var hub = Resources.FindObjectsOfTypeAll<LunaOptimizerWindow>().FirstOrDefault();
+            if (hub == null)
+                hub = GetWindow<LunaOptimizerWindow>("Luna Optimizer", false);
+            hub.overview.Attach(hub, hub.RepaintContent);
+            hub.AttachSimpleViews();
+            return hub;
+        }
+
+        public SizeDashboardView OverviewView
+        {
+            get { return overview; }
+        }
+
+        public TextureOptimizerView TexturesView
+        {
+            get { return textures; }
+        }
+
+        public SoundOptimizerView SoundsView
+        {
+            get { return sounds; }
+        }
+
+        // Enabled on first use (it scans every shipped asset).
+        public AssetsView AssetsViewAttached
+        {
+            get
+            {
+                assets.Attach(this, RepaintContent);
+                return assets;
+            }
+        }
+
+        // The scenes the header's picker offers: Build Settings plus Luna's own, existing files only.
+        public List<string> ScenePaths()
+        {
+            var current = Settings;
+            var paths = EditorBuildSettings.scenes.Select(s => s.path).ToList();
+            if (current != null)
+                paths.AddRange(current.Scenes);
+            return paths.Where(File.Exists).Distinct().ToList();
+        }
+
+        public string BuildScenePath
+        {
+            get
+            {
+                var current = Settings;
+                return current != null && current.Scenes.Count > 0 ? current.Scenes[0] : null;
+            }
+        }
+
+        // Null when Luna now builds that scene, else why not. Unsaved changes must be saved or discarded first.
+        public string ChangeBuildSceneTo(string path)
+        {
+            if (PendingTotal > 0)
+                return "Save or discard the " + PendingTotal + " unsaved change(s) first: they belong to the current scene's assets.";
+            if (!ScenePaths().Contains(path))
+                return "Not a scene in Build Settings or Luna's list: " + path;
+            if (path == BuildScenePath)
+                return null;
+            string error;
+            if (!LunaSettingsWriter.SaveBuildScene(path, ProjectRoot, out error))
+                return "Nothing was changed. " + error;
+            Reload();
+            return null;
+        }
+
+        // After an undo or exclusion change made from the browser page.
+        public void ReloadAll()
+        {
+            Reload();
+        }
+
+        public string BuildSceneName
+        {
+            get
+            {
+                var current = Settings;
+                return current != null && current.Scenes.Count > 0 ? Path.GetFileNameWithoutExtension(current.Scenes[0]) : null;
+            }
+        }
+
+        public bool BuildSceneStale
+        {
+            get { return LunaBuildScenes.IsStale(ProjectRoot, Settings); }
+        }
+
+        public int PendingTotal
+        {
+            get { return Views.Where(v => v.IsEnabled).Sum(v => v.PendingCount); }
+        }
+
+        public void SaveAllPending()
+        {
+            SaveAll();
+        }
+
+        public void DiscardAllPending()
+        {
+            DiscardAll();
+        }
+
+        // Brings the Unity window forward on a tab.
+        public void ShowTab(Tab value)
+        {
+            Show();
+            Focus();
+            SetSimpleMode(false);
+            SelectTab(value);
         }
 
         static string ProjectRoot
@@ -112,7 +239,17 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             // The overview feeds the header's size line, so it runs even while another tab is shown.
             overview.Attach(this, RepaintContent);
-            Current.Attach(this, RepaintContent);
+            simpleMode = EditorPrefs.GetBool(SIMPLE_MODE_PREF, true);
+            if (simpleMode)
+                AttachSimpleViews();
+            else
+                Current.Attach(this, RepaintContent);
+        }
+
+        void AttachSimpleViews()
+        {
+            textures.Attach(this, RepaintContent);
+            sounds.Attach(this, RepaintContent);
         }
 
         void OnDisable()
@@ -129,12 +266,15 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 root.styleSheets.Add(style);
             root.EnableInClassList("lo-light", !EditorGUIUtility.isProSkin);
             root.Add(CreateHeader());
-            root.Add(CreateTabs());
+            tabBar = CreateTabs();
+            root.Add(tabBar);
 
             contentHost = new VisualElement();
             contentHost.AddToClassList("lo-content");
             root.Add(contentHost);
             tabElements.Clear();
+            simple = new SimpleModeView(overview, textures, sounds, OpenManualTab, SaveAll, DiscardAll, text => ShowNotification(new GUIContent(text)));
+            simpleElement = null;
             ShowCurrentTab();
 
             root.schedule.Execute(RefreshHeader).Every(HEADER_REFRESH_MS);
@@ -145,6 +285,14 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             var header = new Toolbar();
             header.AddToClassList("lo-header");
+
+            var modes = new VisualElement();
+            modes.AddToClassList("lo-mode-switch");
+            simpleToggle = ModeToggle("Simple", true, "The size, what ships, and one-click optimizations.");
+            manualToggle = ModeToggle("Manual", false, "Every texture, sound and asset, with per-asset settings.");
+            modes.Add(simpleToggle);
+            modes.Add(manualToggle);
+            header.Add(modes);
 
             sceneField = new DropdownField("Scene") { tooltip = "The scene Luna builds (luna.json). Changing it is saved to Luna and can be undone." };
             sceneField.AddToClassList("lo-scene-field");
@@ -177,6 +325,8 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
             pendingLabel = new Label();
             pendingLabel.AddToClassList("lo-pending");
+            pendingLabel.AddToClassList("lo-badge");
+            pendingLabel.AddToClassList("lo-badge--accent");
             header.Add(pendingLabel);
             saveButton = new ToolbarButton(SaveAll) { text = "Save all", tooltip = "Write every tab's unsaved changes to Luna (each one can be undone)." };
             header.Add(saveButton);
@@ -194,25 +344,82 @@ namespace Supercent.LunaTextureOptimizer.Editor
             return header;
         }
 
+        ToolbarToggle ModeToggle(string text, bool isSimple, string tooltip)
+        {
+            var toggle = new ToolbarToggle { text = text, tooltip = tooltip, value = simpleMode == isSimple };
+            toggle.AddToClassList("lo-mode");
+            toggle.RegisterValueChangedCallback(change =>
+            {
+                if (change.newValue)
+                    SetSimpleMode(isSimple);
+                else if (simpleMode == isSimple)
+                    toggle.SetValueWithoutNotify(true);
+            });
+            return toggle;
+        }
+
+        void SetSimpleMode(bool value)
+        {
+            simpleMode = value;
+            EditorPrefs.SetBool(SIMPLE_MODE_PREF, value);
+            if (simpleToggle != null)
+            {
+                simpleToggle.SetValueWithoutNotify(value);
+                manualToggle.SetValueWithoutNotify(!value);
+            }
+            GUI.FocusControl(null);
+            ShowCurrentTab();
+            RefreshHeader();
+            Repaint();
+        }
+
+        void OpenManualTab(Tab value)
+        {
+            SetSimpleMode(false);
+            SelectTab(value);
+        }
+
+        static Texture TabIcon(Tab value)
+        {
+            switch (value)
+            {
+                case Tab.Textures: return OptimizerUI.TypeIcon(typeof(Texture2D));
+                case Tab.Sounds: return OptimizerUI.TypeIcon(typeof(AudioClip));
+                case Tab.Assets: return OptimizerUI.TypeIcon(typeof(GameObject));
+                default: return OptimizerUI.Icon("d_Profiler.Memory");
+            }
+        }
+
+        // Underlined tabs: icon, title and a badge with the tab's unsaved changes.
         VisualElement CreateTabs()
         {
             var bar = new VisualElement();
             bar.AddToClassList("lo-tabs");
-            tabToggles.Clear();
+            tabButtons.Clear();
+            var views = Views;
             foreach (Tab value in Enum.GetValues(typeof(Tab)))
             {
                 var tabValue = value;
-                var toggle = new ToolbarToggle { value = tabValue == tab };
-                toggle.AddToClassList("lo-tab");
-                toggle.RegisterValueChangedCallback(change =>
+                var button = new VisualElement();
+                button.AddToClassList("lo-tab");
+                button.EnableInClassList("lo-tab--active", tabValue == tab);
+                var icon = TabIcon(value);
+                if (icon != null)
                 {
-                    if (change.newValue)
-                        SelectTab(tabValue);
-                    else if (tab == tabValue)
-                        toggle.SetValueWithoutNotify(true);
-                });
-                tabToggles.Add(toggle);
-                bar.Add(toggle);
+                    var image = new Image { image = icon };
+                    image.AddToClassList("lo-tab-icon");
+                    button.Add(image);
+                }
+                var title = new Label(views[(int)value].Title);
+                title.AddToClassList("lo-tab-title");
+                button.Add(title);
+                var badge = OptimizerUI.Badge(string.Empty, "accent", "Unsaved changes in this tab");
+                badge.AddToClassList("lo-tab-badge");
+                badge.style.display = DisplayStyle.None;
+                button.Add(badge);
+                button.AddManipulator(new Clickable(() => SelectTab(tabValue)));
+                tabButtons.Add(button);
+                bar.Add(button);
             }
             return bar;
         }
@@ -220,8 +427,8 @@ namespace Supercent.LunaTextureOptimizer.Editor
         void SelectTab(Tab value)
         {
             tab = value;
-            for (int i = 0; i < tabToggles.Count; i++)
-                tabToggles[i].SetValueWithoutNotify(i == (int)value);
+            for (int i = 0; i < tabButtons.Count; i++)
+                tabButtons[i].EnableInClassList("lo-tab--active", i == (int)value);
             GUI.FocusControl(null);
             ShowCurrentTab();
             RefreshHeader();
@@ -233,12 +440,29 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             if (contentHost == null)
                 return;
+            tabBar.style.display = simpleMode ? DisplayStyle.None : DisplayStyle.Flex;
+            if (simpleMode)
+            {
+                AttachSimpleViews();
+                if (simpleElement == null)
+                {
+                    simpleElement = simple.CreateUI();
+                    simpleElement.style.flexGrow = 1;
+                    contentHost.Add(simpleElement);
+                }
+                simpleElement.style.display = DisplayStyle.Flex;
+                foreach (var pair in tabElements)
+                    pair.Value.style.display = DisplayStyle.None;
+                return;
+            }
+            if (simpleElement != null)
+                simpleElement.style.display = DisplayStyle.None;
             var current = Current;
             current.Attach(this, RepaintContent);
             VisualElement element;
             if (!tabElements.TryGetValue(current, out element))
             {
-                element = current.CreateUI();
+                element = CreateTabUI(current);
                 if (element == null)
                 {
                     var view = current;
@@ -256,10 +480,27 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 pair.Value.style.display = pair.Key == current ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
+        // A tab that fails to build shows the error instead of leaving the whole window half built.
+        static VisualElement CreateTabUI(OptimizerView view)
+        {
+            try
+            {
+                return view.CreateUI();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                var error = new HelpBox(view.Title + " could not be shown: " + exception.Message + "\nSee the Console; reopen the window to retry.", HelpBoxMessageType.Error);
+                error.AddToClassList("lo-tab-error");
+                return error;
+            }
+        }
+
         void RepaintContent()
         {
-            foreach (var element in tabElements.Values.OfType<IMGUIContainer>())
-                element.MarkDirtyRepaint();
+            // IMGUI parts may sit inside a UI Toolkit tab (the Overview's toolbar and body).
+            foreach (var element in tabElements.Values)
+                element.Query<IMGUIContainer>().ForEach(container => container.MarkDirtyRepaint());
             Repaint();
         }
 
@@ -272,25 +513,33 @@ namespace Supercent.LunaTextureOptimizer.Editor
             float ratio;
             var budget = overview.BudgetSummary(out ratio);
             budgetLabel.text = budget ?? "Size: not measured yet";
-            budgetBar.style.display = budget != null && ratio > 0f ? DisplayStyle.Flex : DisplayStyle.None;
+            // Simple mode shows the size in its own card.
+            budgetLabel.style.display = simpleMode ? DisplayStyle.None : DisplayStyle.Flex;
+            budgetBar.style.display = !simpleMode && budget != null && ratio > 0f ? DisplayStyle.Flex : DisplayStyle.None;
             budgetFill.style.width = Length.Percent(Mathf.Clamp01(ratio) * 100f);
             budgetFill.EnableInClassList("lo-budget-fill--warn", ratio > WARN_RATIO && ratio <= 1f);
             budgetFill.EnableInClassList("lo-budget-fill--over", ratio > 1f);
 
             var views = Views;
             var pending = views.Where(v => v.IsEnabled).Sum(v => v.PendingCount);
-            pendingLabel.text = pending > 0 ? pending + " unsaved change(s)" : string.Empty;
+            pendingLabel.text = pending > 0 ? pending + " unsaved" : string.Empty;
+            pendingLabel.style.display = pending > 0 ? DisplayStyle.Flex : DisplayStyle.None;
             saveButton.SetEnabled(pending > 0);
             discardButton.SetEnabled(pending > 0);
 
             var queued = ExclusionQueue.Paths.Count;
             exclusionsButton.text = "Exclusions" + (queued > 0 ? " (" + queued + ")" : string.Empty);
 
-            for (int i = 0; i < tabToggles.Count && i < views.Length; i++)
+            saveButton.EnableInClassList("lo-primary", pending > 0);
+            for (int i = 0; i < tabButtons.Count && i < views.Length; i++)
             {
                 var count = views[i].IsEnabled ? views[i].PendingCount : 0;
-                tabToggles[i].text = views[i].Title + (count > 0 ? "  (" + count + ")" : string.Empty);
+                var badge = tabButtons[i].Q<Label>(className: "lo-tab-badge");
+                badge.text = count.ToString();
+                badge.style.display = count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
             }
+            if (simpleMode && simple != null)
+                simple.Refresh();
         }
 
         // Build Settings scenes (plus Luna's own), named by file; folders added only when two scenes share a name.
