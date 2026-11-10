@@ -15,7 +15,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
     [Serializable]
     public class AssetsView : OptimizerView
     {
-        const float ROW_HEIGHT = 22f;
+        const float ROW_HEIGHT = 24f;
         const float DETAILS_WIDTH = 400f;
         const float PREVIEW_HEIGHT = 300f;
         const string ALL_TYPES = "All types";
@@ -53,6 +53,8 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
         MultiColumnListView table;
         Label summaryLabel;
+        VisualElement statStrip;
+        SearchBar searchBar;
         DropdownField kindField;
         Button excludeTickedButton;
         ScrollView details;
@@ -106,6 +108,28 @@ namespace Supercent.LunaTextureOptimizer.Editor
             ApplySortAndFilter();
         }
 
+        // ---------------------------------------------------------------- for the browser page (LunaOptimizerWebApi)
+
+        public List<Dictionary<string, object>> BrowserRows()
+        {
+            return rows.Select(r => new Dictionary<string, object>
+            {
+                { "name", r.Name }, { "path", r.Path }, { "kind", r.Kind }, { "folder", r.Folder },
+                { "file", r.FileBytes }, { "users", r.UserCount }, { "playable", LunaOptimizerWindow.SizeOf(r.Path) },
+                { "excluding", ExclusionQueue.IsQueued(r.Path) },
+            }).ToList();
+        }
+
+        public LunaSettings Settings
+        {
+            get { return settings; }
+        }
+
+        public void Rescan()
+        {
+            Refresh();
+        }
+
         // Null for what other tabs cover (textures, sounds) and what is not an asset of its own (scenes, scripts, folders).
         static string KindOf(string path)
         {
@@ -151,7 +175,8 @@ namespace Supercent.LunaTextureOptimizer.Editor
             root.AddToClassList("lo-tab-root");
 
             var toolbar = new Toolbar();
-            toolbar.Add(new ToolbarButton(Refresh) { text = "Refresh", tooltip = "Scan again: what Luna ships and who uses what." });
+            toolbar.AddToClassList("lo-tab-toolbar");
+            toolbar.Add(OptimizerUI.IconButton("d_Refresh", "Refresh", "Scan again: what Luna ships and who uses what.", Refresh));
             kindField = new DropdownField(new List<string> { ALL_TYPES }, 0);
             kindField.AddToClassList("lo-toolbar-field");
             kindField.RegisterValueChangedCallback(change =>
@@ -165,28 +190,31 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 tooltip = "Add the ticked assets to the Luna Exclusions window for review.",
             };
             toolbar.Add(excludeTickedButton);
-            var spacer = new VisualElement();
-            spacer.AddToClassList("lo-spacer");
-            toolbar.Add(spacer);
-            var search = new ToolbarSearchField { value = searchText };
-            search.AddToClassList("lo-search");
-            search.RegisterValueChangedCallback(change =>
-            {
-                searchText = change.newValue ?? string.Empty;
-                ApplySortAndFilter();
-            });
-            toolbar.Add(search);
             root.Add(toolbar);
 
+            statStrip = OptimizerUI.StatStrip();
+            root.Add(statStrip);
             summaryLabel = new Label();
             summaryLabel.AddToClassList("lo-summary");
+            summaryLabel.AddToClassList("lo-muted");
             root.Add(summaryLabel);
+            var bar = new VisualElement();
+            bar.AddToClassList("lo-bulkbar");
+            searchBar = new SearchBar(searchText, "Search assets by name or path   (Ctrl/Cmd+F)", value =>
+            {
+                searchText = value;
+                ApplySortAndFilter();
+            });
+            bar.Add(searchBar);
+            root.Add(bar);
+            searchBar.RegisterShortcut(root);
 
             var split = new TwoPaneSplitView(1, DETAILS_WIDTH, TwoPaneSplitViewOrientation.Horizontal) { viewDataKey = "lo-assets-split" };
             split.AddToClassList("lo-split");
             split.Add(CreateTable());
             details = new ScrollView();
             details.AddToClassList("lo-details");
+            details.contentContainer.AddToClassList("lo-details-content");
             split.Add(details);
             root.Add(split);
 
@@ -355,6 +383,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             if (table == null)
                 return;
+            searchBar.SetCount(visibleRows.Count, rows.Count);
             table.itemsSource = visibleRows;
             table.RefreshItems();
             var index = selectedPath != null ? visibleRows.FindIndex(r => r.Path == selectedPath) : -1;
@@ -367,10 +396,21 @@ namespace Supercent.LunaTextureOptimizer.Editor
             kindField.choices = kinds;
             kindField.SetValueWithoutNotify(kinds.Contains(kindFilter) ? kindFilter : ALL_TYPES);
 
-            var counts = rows.GroupBy(r => r.Kind).OrderByDescending(g => g.Count()).Select(g => g.Count() + " " + g.Key.ToLowerInvariant());
-            summaryLabel.text = settings == null
-                ? LunaSettings.FILE_NAME + " not found in the project root."
-                : rows.Count + " other shipped assets: " + string.Join(", ", counts) + ". Sizes come from the Overview's last Measure." + OptimizerUI.ExcludedNote(settings);
+            statStrip.Clear();
+            if (settings == null)
+            {
+                summaryLabel.text = LunaSettings.FILE_NAME + " not found in the project root.";
+            }
+            else
+            {
+                OptimizerUI.AddStat(statStrip, rows.Count.ToString(), "other shipped assets", null, "lo-stat--key");
+                foreach (var group in rows.GroupBy(r => r.Kind).OrderByDescending(g => g.Count()).Take(6))
+                    OptimizerUI.AddStat(statStrip, group.Count().ToString(), group.Key.ToLowerInvariant());
+                var excluded = OptimizerUI.ExcludedCount(settings);
+                if (excluded > 0)
+                    OptimizerUI.AddStat(statStrip, excluded.ToString(), "excluded", "Excluded assets/folders are not listed: see Exclusions.");
+                summaryLabel.text = "Sizes in the playable come from the Overview's last Measure.";
+            }
             RefreshToolbar();
             RefreshDetails();
         }
@@ -380,7 +420,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
             if (excludeTickedButton == null)
                 return;
             var count = TickedVisible().Count;
-            excludeTickedButton.text = "Add " + count + " ticked to Exclusions";
+            excludeTickedButton.text = count > 0 ? "Exclude " + count + " ticked…" : "Exclude ticked…";
             excludeTickedButton.SetEnabled(count > 0);
         }
 
@@ -401,10 +441,10 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 return;
             }
 
-            var title = new Label(row.Name);
-            title.AddToClassList("lo-details-title");
-            details.Add(title);
-            details.Add(OptimizerUI.LinkLabel(row.Path, row.Path, "lo-small"));
+            var badges = new List<Label> { OptimizerUI.Badge(row.Kind, null) };
+            if (ExclusionQueue.IsQueued(row.Path))
+                badges.Add(OptimizerUI.Badge("Excluding", "warn", "Waiting in the Luna Exclusions window (Pending)."));
+            details.Add(OptimizerUI.DetailsHeader(row.Name, row.Path, badges));
 
             var asset = AssetDatabase.LoadMainAssetAtPath(row.Path);
             if (asset != null)
@@ -416,14 +456,13 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 preview.AddToClassList("lo-preview");
                 preview.style.height = PREVIEW_HEIGHT;
                 details.Add(preview);
-                if (previewEditor != null && previewEditor.HasPreviewGUI())
+                if (HasInteractivePreview())
                     details.Add(OptimizerUI.SmallLabel("Drag to rotate, scroll to zoom (Unity's preview)."));
             }
 
+            details.Add(OptimizerUI.Metric(PlayableText(row.Path), "in playable", null, false));
             details.Add(OptimizerUI.SectionTitle("Size"));
-            details.Add(OptimizerUI.InfoRow("Type", row.Kind));
             details.Add(OptimizerUI.InfoRow("File", FormatBytes(row.FileBytes)));
-            details.Add(OptimizerUI.InfoRow("In playable", PlayableText(row.Path)));
             var dependencies = AssetDatabase.GetDependencies(row.Path, false).Where(d => d != row.Path && !d.EndsWith(".cs", StringComparison.Ordinal)).ToList();
             details.Add(OptimizerUI.InfoRow("Uses", dependencies.Count == 0 ? "nothing" : dependencies.Count + " asset(s)"));
             foreach (var dependency in dependencies.Take(12))
@@ -444,9 +483,30 @@ namespace Supercent.LunaTextureOptimizer.Editor
             }
             details.Add(OptimizerUI.UsedBy(result));
 
-            var exclude = new Button(() => LunaExclusionWindow.AddAndShow(new[] { row.Path })) { text = "Add to Luna Exclusions…", tooltip = "Review it in the Luna Exclusions window before anything is written." };
+            var actions = new VisualElement();
+            actions.AddToClassList("lo-details-actions");
+            var ping = new Button(() => OptimizerUI.Ping(row.Path)) { text = "Show in Project" };
+            ping.AddToClassList("lo-details-button");
+            actions.Add(ping);
+            var exclude = new Button(() => LunaExclusionWindow.AddAndShow(new[] { row.Path })) { text = "Exclude from build…", tooltip = "Review it in the Luna Exclusions window before anything is written." };
             exclude.AddToClassList("lo-details-button");
-            details.Add(exclude);
+            actions.Add(exclude);
+            details.Add(actions);
+        }
+
+        // Some of Unity's editors (AnimationClipEditor right after a domain reload) throw from HasPreviewGUI: no preview then.
+        bool HasInteractivePreview()
+        {
+            if (previewEditor == null)
+                return false;
+            try
+            {
+                return previewEditor.HasPreviewGUI();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         // Models and prefabs: Unity's thumbnail. Others: Unity's interactive preview when there is one (materials, meshes, animations), else the thumbnail.
@@ -455,7 +515,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
             var rect = new Rect(0f, 0f, container.contentRect.width, container.contentRect.height);
             if (rect.width < 2f || rect.height < 2f)
                 return;
-            if (previewEditor != null && previewEditor.HasPreviewGUI())
+            if (HasInteractivePreview())
             {
                 previewEditor.OnInteractivePreviewGUI(rect, EditorStyles.helpBox);
                 return;

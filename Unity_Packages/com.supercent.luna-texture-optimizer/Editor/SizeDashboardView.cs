@@ -151,39 +151,6 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 runner.Cancel();
         }
 
-        // Full-width search over categories, assets, scripts and types.
-        void DrawSearch()
-        {
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Space(4f);
-            GUI.SetNextControlName("OverviewSearch");
-            filter = EditorGUILayout.TextField(filter ?? string.Empty, EditorStyles.toolbarSearchField, GUILayout.ExpandWidth(true));
-            if (Filtering && GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(45f)))
-            {
-                filter = string.Empty;
-                GUI.FocusControl(null);
-            }
-            GUILayout.Space(4f);
-            EditorGUILayout.EndHorizontal();
-            if (string.IsNullOrEmpty(filter) && Event.current.type == EventType.Repaint)
-            {
-                var rect = GUILayoutUtility.GetLastRect();
-                GUI.Label(new Rect(rect.x + 22f, rect.y, rect.width, rect.height), "Search assets, scripts, types, categories…", PlaceholderStyle);
-            }
-        }
-
-        [NonSerialized] GUIStyle placeholderStyle;
-
-        GUIStyle PlaceholderStyle
-        {
-            get
-            {
-                if (placeholderStyle == null)
-                    placeholderStyle = new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = new Color(0.5f, 0.5f, 0.5f) } };
-                return placeholderStyle;
-            }
-        }
-
         // Set by the hub when the last Luna build was of another scene than the one Luna builds now.
         [NonSerialized] public string StaleSceneNote;
 
@@ -433,11 +400,22 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
         void ApplyPlan()
         {
-            if (!EditorUtility.DisplayDialog("Apply to Luna",
-                    "Save these engine settings to Luna?\n\n" + DescribePlan()
-                    + "\n\nRemoving a module the game uses breaks it (missing physics, particles or animation). Playtest the next build.",
-                    "Apply", "Cancel"))
+            if (!EditorUtility.DisplayDialog("Apply to Luna", PlanConfirmation, "Apply", "Cancel"))
                 return;
+            ApplyPlanCore();
+        }
+
+        string PlanConfirmation
+        {
+            get
+            {
+                return "Save these engine settings to Luna?\n\n" + DescribePlan()
+                    + "\n\nRemoving a module the game uses breaks it (missing physics, particles or animation). Playtest the next build.";
+            }
+        }
+
+        void ApplyPlanCore()
+        {
             string error;
             if (!LunaSettingsWriter.SaveModules(plannedMecanimWasm, plannedModules, projectRoot, out error))
             {
@@ -487,9 +465,8 @@ namespace Supercent.LunaTextureOptimizer.Editor
         // Plain paths in Luna's exclude list: assets/folders left out on purpose (here or in the Luna window). Patterns like **/Editor/ are Luna's own.
         void DrawExcluded()
         {
-            EditorGUILayout.Space(8f);
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Excluded from the build  (" + forcedExcludes.Count + ")", EditorStyles.boldLabel);
+            OverviewStyles.Section("Excluded from the build", forcedExcludes.Count.ToString());
             GUILayout.FlexibleSpace();
             if (GUILayout.Button(new GUIContent("Open Exclusions", "Pending exclusions, what uses them, and what is excluded now."), GUILayout.Width(110f)))
                 LunaExclusionWindow.Open();
@@ -535,7 +512,46 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
         // ---------------------------------------------------------------- drawing
 
+        [NonSerialized] SearchBar searchBar;
+        [NonSerialized] UnityEngine.UIElements.IMGUIContainer body;
+
+        // UI Toolkit frame (the shared search bar, like the other tabs) around the IMGUI toolbar and body.
+        public override UnityEngine.UIElements.VisualElement CreateUI()
+        {
+            var root = new UnityEngine.UIElements.VisualElement();
+            root.AddToClassList("lo-tab-root");
+            var toolbar = new UnityEngine.UIElements.IMGUIContainer(() =>
+            {
+                EnsureStyles();
+                DrawToolbar();
+            });
+            toolbar.AddToClassList("lo-imgui-toolbar");
+            root.Add(toolbar);
+            var bar = new UnityEngine.UIElements.VisualElement();
+            bar.AddToClassList("lo-bulkbar");
+            searchBar = new SearchBar(filter, "Search assets, scripts, types, categories   (Ctrl/Cmd+F)", value =>
+            {
+                filter = value;
+                if (body != null)
+                    body.MarkDirtyRepaint();
+            });
+            bar.Add(searchBar);
+            root.Add(bar);
+            searchBar.RegisterShortcut(root);
+            body = new UnityEngine.UIElements.IMGUIContainer(DrawBody);
+            body.AddToClassList("lo-imgui-body");
+            root.Add(body);
+            return root;
+        }
+
         public override void OnGUI()
+        {
+            EnsureStyles();
+            DrawToolbar();
+            DrawBody();
+        }
+
+        void EnsureStyles()
         {
             if (rightLabel == null)
             {
@@ -543,8 +559,12 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 wrapLabel = new GUIStyle(EditorStyles.label) { wordWrap = true };
                 linkLabel = new GUIStyle(EditorStyles.label) { normal = { textColor = EditorGUIUtility.isProSkin ? new Color(0.45f, 0.7f, 1f) : new Color(0.1f, 0.35f, 0.8f) } };
             }
-            DrawToolbar();
-            DrawSearch();
+            OverviewStyles.Ensure();
+        }
+
+        void DrawBody()
+        {
+            EnsureStyles();
             if (!string.IsNullOrEmpty(StaleSceneNote))
                 EditorGUILayout.HelpBox(StaleSceneNote, MessageType.Warning);
             if (install == null)
@@ -562,15 +582,22 @@ namespace Supercent.LunaTextureOptimizer.Editor
             }
 
             scroll = EditorGUILayout.BeginScrollView(scroll);
-            DrawFreshness();
+            OverviewStyles.BeginCard();
             DrawBudget();
-            EditorGUILayout.Space();
+            DrawFreshness();
+            OverviewStyles.EndCard();
+            OverviewStyles.BeginCard();
             DrawCategories();
-            EditorGUILayout.Space();
+            OverviewStyles.EndCard();
+            OverviewStyles.BeginCard();
             DrawScripts();
-            EditorGUILayout.Space();
+            OverviewStyles.EndCard();
+            OverviewStyles.BeginCard();
             DrawModules();
+            OverviewStyles.EndCard();
+            OverviewStyles.BeginCard();
             DrawExcluded();
+            OverviewStyles.EndCard();
             EditorGUILayout.EndScrollView();
         }
 
@@ -581,8 +608,11 @@ namespace Supercent.LunaTextureOptimizer.Editor
             {
                 if (runner == null)
                 {
-                    if (GUILayout.Button(new GUIContent("Measure", "Run Luna's own size statistics on the last build output."), EditorStyles.toolbarButton, GUILayout.Width(70f)))
+                    var background = GUI.backgroundColor;
+                    GUI.backgroundColor = OverviewStyles.AccentButton;
+                    if (GUILayout.Button(new GUIContent("Measure", "Run Luna's own size statistics on the last build output."), OverviewStyles.PrimaryToolbarButton, GUILayout.Width(80f)))
                         Measure(false);
+                    GUI.backgroundColor = background;
                 }
                 else if (GUILayout.Button("Cancel", EditorStyles.toolbarButton, GUILayout.Width(70f)))
                 {
@@ -823,6 +853,283 @@ namespace Supercent.LunaTextureOptimizer.Editor
             return changed > buildOutputTime.AddSeconds(5);
         }
 
+        // ---------------------------------------------------------------- for the browser page (LunaOptimizerWebApi)
+
+        // Everything the Overview tab shows, as plain data for the page.
+        public Dictionary<string, object> BrowserData()
+        {
+            var data = new Dictionary<string, object>
+            {
+                { "lunaFound", install != null },
+                { "measured", current != null && current.stats != null },
+                { "measuring", runner != null },
+                { "measuringLabel", runner != null ? "Measuring " + runner.Label + "… " + runner.ElapsedSeconds.ToString("0") + " s" : null },
+                { "message", message },
+                { "messageType", messageType.ToString() },
+                { "staleNote", StaleSceneNote },
+                { "networks", networkNames.Select(n => new Dictionary<string, object> { { "name", n }, { "limit", LimitOf(n) } }).ToList() },
+                { "selectedNetwork", SelectedNetwork },
+                { "measuredNetwork", current != null ? current.network ?? "develop" : null },
+                { "auto", autoRefresh },
+                { "speedUp", LunaBuildAcceleration.Enabled },
+                { "total", composedTotal },
+                { "limit", Limit },
+            };
+            if (current == null || current.stats == null)
+                return data;
+            data["noBuild"] = current.noBuild;
+            data["freshness"] = current.noBuild ? "No Luna build yet: scripts and textures are measured from your project; scene deserializers are estimated (~16 KB). Fonts, meshes, sounds, shaders and other assets are not included until the first Luna build."
+                : "Measured " + FormatTime(current.measuredAt) + ". Live: " + (current.live ? "scripts, " : string.Empty) + "textures. Other categories from the build of " + buildOutputTime.ToString("MMM d HH:mm") + ".";
+            data["changedSinceBuild"] = rows.Sum(r => r.changed);
+
+            data["categories"] = rows.OrderByDescending(r => r.size).Select(row => new Dictionary<string, object>
+            {
+                { "name", row.name },
+                { "size", row.size },
+                { "count", row.assets.Count },
+                { "live", row.live },
+                { "estimated", row.sceneEstimate != null || row.estimatedFiles > 0 || row.estimatedDeserializers },
+                { "note", CategoryNote(row) },
+                { "assets", row.assets.OrderByDescending(a => a.size).Select(a => new Dictionary<string, object>
+                    {
+                        { "title", a.title }, { "path", a.path }, { "size", a.size },
+                        { "tag", a.tag == "changed" ? "changed since build" : a.tag == "new" ? "new since build" : a.tag == SceneSizeEstimator.ESTIMATED || a.tag == SceneSizeEstimator.CHANGED ? a.tag : null },
+                    }).ToList() },
+            }).ToList();
+
+            var scripts = new Dictionary<string, object> { { "total", current.stats.scripts } };
+            var sizes = current.scripts;
+            if (sizes != null && sizes.files != null && sizes.files.Count > 0)
+            {
+                var scale = current.stats.scripts / Math.Max(1, sizes.files.Sum(f => f.br));
+                scripts["files"] = sizes.files.Where(f => f.br > 0).OrderByDescending(f => f.br)
+                    .Select(f => new Dictionary<string, object> { { "name", ScriptFileLabel(f.src) }, { "size", f.br * scale } }).ToList();
+                var user = sizes.user;
+                var userFile = sizes.files.FirstOrDefault(f => f.src.EndsWith("UnityScriptsCompiler.js", StringComparison.Ordinal));
+                if (user != null && userFile != null && user.types.Count > 0)
+                {
+                    var userBytes = userFile.br * scale;
+                    var userScale = userBytes / Math.Max(1, user.types.Sum(t => t.br) + user.metadataBr + user.otherBr);
+                    if (typeFiles == null)
+                        typeFiles = ScriptSizeEstimator.TypeFileMap(projectRoot, user.types.Select(t => t.name));
+                    scripts["user"] = userBytes;
+                    scripts["typeCount"] = user.types.Count;
+                    scripts["metadata"] = user.metadataBr * userScale;
+                    scripts["namespaces"] = user.types.GroupBy(t => Namespace(t.name)).OrderByDescending(g => g.Sum(t => t.br))
+                        .Select(g => new Dictionary<string, object> { { "name", g.Key }, { "count", g.Count() }, { "size", g.Sum(t => t.br) * userScale } }).ToList();
+                    scripts["types"] = user.types.OrderByDescending(t => t.br).Select(t =>
+                    {
+                        string file;
+                        typeFiles.TryGetValue(t.name, out file);
+                        return new Dictionary<string, object> { { "name", t.name }, { "size", t.br * userScale }, { "path", file } };
+                    }).ToList();
+                    if (current.fileScripts != null)
+                        scripts["csFiles"] = current.fileScripts.OrderByDescending(f => f.js)
+                            .Select(f => new Dictionary<string, object> { { "path", f.path }, { "size", f.js } }).ToList();
+                }
+            }
+            data["scripts"] = scripts;
+
+            var moduleSizes = ModuleSizes();
+            Func<string, string, bool, bool, Dictionary<string, object>> module = (label, name, planned, saved) =>
+            {
+                double size;
+                return new Dictionary<string, object>
+                {
+                    { "label", label }, { "name", name }, { "planned", planned }, { "saved", saved },
+                    { "size", moduleSizes.TryGetValue(name, out size) ? size : (double?)null },
+                };
+            };
+            var modules = new List<object> { module("Mecanim WASM (fast animation runtime)", MECANIM_WASM, plannedMecanimWasm, savedMecanimWasm) };
+            modules.AddRange(savedModules.Keys.OrderBy(n => n).Select(n => module(n, n, plannedModules[n], savedModules[n])));
+            data["modules"] = modules;
+            data["planChanged"] = plannedMecanimWasm != savedMecanimWasm || plannedModules.Any(m => savedModules[m.Key] != m.Value);
+            data["planDescription"] = DescribePlan();
+            if (whatIf != null && whatIf.stats != null)
+                data["whatIf"] = new Dictionary<string, object>
+                {
+                    { "label", whatIf.label }, { "total", whatIf.stats.total }, { "now", current.stats.total },
+                    { "scripts", whatIf.stats.scripts }, { "scriptsNow", current.stats.scripts },
+                };
+            data["excluded"] = forcedExcludes.Select(path => new Dictionary<string, object>
+            {
+                { "path", path },
+                { "exists", AssetDatabase.IsValidFolder(path.TrimEnd('/')) || !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(path)) },
+            }).ToList();
+            return data;
+        }
+
+        string CategoryNote(CategoryRow row)
+        {
+            var notes = new List<string>();
+            if (row.estimatedDeserializers)
+                notes.Add("incl. ~16 KB estimated scene deserializers");
+            if (row.sceneEstimate != null)
+                notes.Add("≈ " + row.remembered + " remembered" + (row.estimated > 0 ? ", " + row.estimated + " estimated" : string.Empty));
+            if (row.estimatedFiles > 0)
+                notes.Add("estimate, " + row.estimatedFiles + " file(s) changed" + (runner != null ? ", measuring…" : string.Empty));
+            else if (row.live)
+                notes.Add("live");
+            else if (row.assets.Count > 0)
+                notes.Add("last build");
+            if (row.changed > 0)
+                notes.Add(row.changed + " changed");
+            return string.Join("  ·  ", notes);
+        }
+
+        // Selects an Overview row's asset in Unity (Luna lists some assets by name only).
+        public bool Locate(string assetPath, string title, string category)
+        {
+            var target = Locatable(assetPath, title, category);
+            if (target == null)
+                return false;
+            var asset = Resolve(target, title);
+            if (asset == null)
+                return false;
+            EditorUtility.FocusProjectWindow();
+            Selection.activeObject = asset;
+            EditorGUIUtility.PingObject(asset);
+            return true;
+        }
+
+        public void SetNetwork(string name)
+        {
+            var index = Array.IndexOf(networkNames, name);
+            if (index < 0)
+                return;
+            networkIndex = index;
+            EditorPrefs.SetString(NETWORK_PREF, name);
+        }
+
+        public void SetAuto(bool value)
+        {
+            autoRefresh = value;
+            EditorPrefs.SetBool(AUTO_PREF, value);
+        }
+
+        public void SetSpeedUp(bool value)
+        {
+            LunaBuildAcceleration.Enabled = value;
+        }
+
+        public void PlanModule(string name, bool included)
+        {
+            if (name == MECANIM_WASM)
+                plannedMecanimWasm = included;
+            else if (plannedModules.ContainsKey(name))
+                plannedModules[name] = included;
+        }
+
+        public void ResetPlan()
+        {
+            plannedMecanimWasm = savedMecanimWasm;
+            plannedModules = new Dictionary<string, bool>(savedModules);
+            whatIf = null;
+        }
+
+        public void MeasureWhatIf()
+        {
+            if (runner == null)
+                Measure(true);
+        }
+
+        public string PlanConfirmationText
+        {
+            get { return PlanConfirmation; }
+        }
+
+        public void ApplyPlanConfirmed()
+        {
+            ApplyPlanCore();
+        }
+
+        public bool ReInclude(string path, out string error)
+        {
+            var ok = LunaSettingsWriter.SaveAssetExcludes(new List<string>(), new List<string> { path }, "Re-include: " + Path.GetFileName(path.TrimEnd('/')), projectRoot, out error);
+            ReadExcludes();
+            if (ok)
+                LunaOptimizerWindow.NotifyLunaSettingsChanged();
+            return ok;
+        }
+
+        // ---------------------------------------------------------------- for the hub's Simple mode
+
+        public class CategorySummary
+        {
+            public string Name;
+            public double Bytes;
+            public int Count;
+            public bool Estimated;   // part of the size is estimated (scene not built, scripts changed, no build yet)
+        }
+
+        public bool HasLunaInstall
+        {
+            get { return install != null; }
+        }
+
+        public bool HasMeasurement
+        {
+            get { return current != null && current.stats != null; }
+        }
+
+        public bool IsMeasuring
+        {
+            get { return runner != null; }
+        }
+
+        public string MeasuredAtText
+        {
+            get { return HasMeasurement ? FormatTime(current.measuredAt) : null; }
+        }
+
+        // The last Measure problem (null when none).
+        public string LastMessage
+        {
+            get { return messageType == MessageType.Error || messageType == MessageType.Warning ? message : null; }
+        }
+
+        // Network the shown sizes were measured for.
+        public string Network
+        {
+            get { return current != null ? current.network ?? "develop" : SelectedNetwork; }
+        }
+
+        public double TotalBytes
+        {
+            get { return composedTotal; }
+        }
+
+        // Network cap of the measured network, 0 when it has none.
+        public long Limit
+        {
+            get { return current != null ? LimitOf(current.network ?? "develop") : 0; }
+        }
+
+        public List<CategorySummary> Categories()
+        {
+            return rows.Where(r => r.size > 0).OrderByDescending(r => r.size).Select(r => new CategorySummary
+            {
+                Name = r.name,
+                Bytes = r.size,
+                Count = r.assets.Count,
+                Estimated = r.sceneEstimate != null || r.estimatedFiles > 0 || r.estimatedDeserializers,
+            }).ToList();
+        }
+
+        public void MeasureNow()
+        {
+            if (install != null && runner == null)
+                Measure(false);
+        }
+
+        public void CancelMeasure()
+        {
+            if (runner == null)
+                return;
+            runner.Cancel();
+            runner = null;
+        }
+
         // For the hub header: total playable size against the network cap, or null before the first measure.
         public string BudgetSummary(out float ratio)
         {
@@ -839,23 +1146,20 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             var network = current.network ?? "develop";
             var limit = LimitOf(network);
-            EditorGUILayout.LabelField(FormatBytes(composedTotal) + (limit > 0 ? " of " + FormatBytes(limit) : string.Empty) + "  (" + network + ")", EditorStyles.boldLabel);
+            OverviewStyles.Hero(FormatBytes(composedTotal), (limit > 0 ? "of " + FormatBytes(limit) + "  ·  " : string.Empty) + network);
             if (network != SelectedNetwork)
                 EditorGUILayout.HelpBox("These numbers are for " + network + ". Press Measure for " + SelectedNetwork
                     + " (only Luna's statistics run again; ~15-20 s). Encoding and template differ per network.", MessageType.Info);
             if (limit <= 0)
                 return;
-            var rect = GUILayoutUtility.GetRect(0f, BAR_HEIGHT, GUILayout.ExpandWidth(true));
             var ratio = (float)(composedTotal / limit);
-            EditorGUI.DrawRect(rect, new Color(0.5f, 0.5f, 0.5f, 0.25f));
-            EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width * Mathf.Clamp01(ratio), rect.height),
-                ratio > 1f ? new Color(0.85f, 0.25f, 0.2f) : ratio > 0.85f ? new Color(0.95f, 0.65f, 0.1f) : new Color(0.3f, 0.7f, 0.35f));
-            GUI.Label(rect, (ratio * 100f).ToString("0") + "%  ·  " + (limit - composedTotal >= 0 ? FormatBytes(limit - composedTotal) + " left" : FormatBytes(composedTotal - limit) + " over"), rightLabel);
+            OverviewStyles.Meter(ratio, BAR_HEIGHT);
+            GUILayout.Label((ratio * 100f).ToString("0") + "%  ·  " + (limit - composedTotal >= 0 ? FormatBytes(limit - composedTotal) + " left" : FormatBytes(composedTotal - limit) + " over"), OverviewStyles.Muted);
         }
 
         void DrawCategories()
         {
-            EditorGUILayout.LabelField("By category" + (Filtering ? "   (filter: " + filter + ")" : string.Empty), EditorStyles.boldLabel);
+            OverviewStyles.Section("By category", Filtering ? "filter: " + filter : "click a category to list its assets");
             foreach (var row in rows.OrderByDescending(r => r.size))
             {
                 var matching = row.assets.Where(a => Matches(a.title) || Matches(a.path)).OrderByDescending(a => a.size).ToList();
@@ -871,7 +1175,12 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 if (row.assets.Count == 0)
                     label = row.name + (row.estimatedDeserializers ? "   · incl. ~16 KB estimated scene deserializers" : string.Empty)
                         + (row.estimatedFiles > 0 ? "   · estimate, " + row.estimatedFiles + " file(s) changed" + (runner != null ? ", measuring…" : string.Empty) : row.live ? "   · live" : string.Empty);
-                var rect = SizeRow(label, row.size, composedTotal, row.assets.Count > 0 ? (bool?)open : null, 0);
+                var primary = row.name + (row.assets.Count > 0 ? "  (" + row.assets.Count + ")" : string.Empty);
+                var note = label.StartsWith(primary, StringComparison.Ordinal) ? label.Substring(primary.Length).Trim().TrimStart('·').Trim().Replace("   · ", "  ·  ") : null;
+                // The banner above already says the scene was not built: keep only the counts here.
+                if (note != null && row.sceneEstimate != null)
+                    note = note.Replace(row.sceneEstimate + " not built: ", "≈ ");
+                var rect = SizeRow(label.StartsWith(primary, StringComparison.Ordinal) ? primary : label, row.size, composedTotal, row.assets.Count > 0 ? (bool?)open : null, 0, null, null, note);
                 if (row.assets.Count > 0 && Event.current.type == EventType.MouseDown && rect.Contains(Event.current.mousePosition))
                 {
                     if (expanded.Contains(key)) expanded.Remove(key); else expanded.Add(key);
@@ -891,7 +1200,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
         void DrawScripts()
         {
-            EditorGUILayout.LabelField("Scripts (" + FormatBytes(current.stats.scripts) + ")", EditorStyles.boldLabel);
+            OverviewStyles.Section("Scripts", FormatBytes(current.stats.scripts));
             var sizes = current.scripts;
             if (sizes == null || sizes.files == null || sizes.files.Count == 0)
             {
@@ -1057,7 +1366,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
         void DrawModules()
         {
-            EditorGUILayout.LabelField("Engine modules", EditorStyles.boldLabel);
+            OverviewStyles.Section("Engine modules", null);
             EditorGUILayout.LabelField("Unticking ships Luna's empty stub instead. Measure the what-if to see the exact size; "
                 + "only remove what the game does not use, then playtest.", wrapLabel);
 
@@ -1140,18 +1449,31 @@ namespace Supercent.LunaTextureOptimizer.Editor
         }
 
         // Label | bar | size, indented; returns the row rect for click handling.
-        Rect SizeRow(string label, double bytes, double whole, bool? foldout, int indent, GUIStyle style = null, string tooltip = null)
+        // note: extra facts drawn muted after the label.
+        Rect SizeRow(string label, double bytes, double whole, bool? foldout, int indent, GUIStyle style = null, string tooltip = null, string note = null)
         {
-            var rect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
+            var rect = EditorGUILayout.GetControlRect(false, OverviewStyles.ROW_HEIGHT);
+            if (rect.Contains(Event.current.mousePosition))
+                EditorGUI.DrawRect(rect, OverviewStyles.Hover);
+            var share = whole > 0 ? bytes / whole : 0;
             var sizeWidth = 75f;
-            var barWidth = Mathf.Min(160f, rect.width * 0.25f);
-            var labelRect = new Rect(rect.x + indent * 16f, rect.y, rect.width - sizeWidth - barWidth - 8f - indent * 16f, rect.height);
-            var barRect = new Rect(rect.xMax - sizeWidth - barWidth - 4f, rect.y + 3f, barWidth, rect.height - 6f);
-            var sizeRect = new Rect(rect.xMax - sizeWidth, rect.y, sizeWidth, rect.height);
-            GUI.Label(labelRect, new GUIContent((foldout.HasValue ? (foldout.Value ? "▾ " : "▸ ") : string.Empty) + label, tooltip), style ?? EditorStyles.label);
-            EditorGUI.DrawRect(barRect, new Color(0.5f, 0.5f, 0.5f, 0.2f));
-            EditorGUI.DrawRect(new Rect(barRect.x, barRect.y, barRect.width * Mathf.Clamp01((float)(bytes / Math.Max(1, whole))), barRect.height), new Color(0.35f, 0.6f, 0.9f));
-            GUI.Label(sizeRect, FormatBytes(bytes), rightLabel);
+            var shareWidth = 38f;
+            var barWidth = Mathf.Min(180f, rect.width * 0.25f);
+            var labelRect = new Rect(rect.x + 4f + indent * 16f, rect.y, rect.width - sizeWidth - shareWidth - barWidth - 16f - indent * 16f, rect.height);
+            var barRect = new Rect(rect.xMax - sizeWidth - shareWidth - barWidth - 8f, rect.y + rect.height / 2f - 3f, barWidth, 6f);
+            var sizeRect = new Rect(rect.xMax - sizeWidth - shareWidth - 4f, rect.y, sizeWidth, rect.height);
+            var shareRect = new Rect(rect.xMax - shareWidth - 4f, rect.y, shareWidth, rect.height);
+            var text = (foldout.HasValue ? (foldout.Value ? "▾  " : "▸  ") : string.Empty) + label;
+            var labelStyle = style ?? (indent == 0 ? OverviewStyles.RowLabel : EditorStyles.label);
+            GUI.Label(labelRect, new GUIContent(text, tooltip), labelStyle);
+            if (!string.IsNullOrEmpty(note))
+            {
+                var used = Mathf.Min(labelRect.width, labelStyle.CalcSize(new GUIContent(text)).x + 8f);
+                GUI.Label(new Rect(labelRect.x + used, labelRect.y, labelRect.width - used, labelRect.height), note, OverviewStyles.Muted);
+            }
+            OverviewStyles.Bar(barRect, (float)share);
+            GUI.Label(sizeRect, FormatBytes(bytes), indent == 0 ? OverviewStyles.SizeBold : rightLabel);
+            GUI.Label(shareRect, share >= 0.005 ? (share * 100).ToString("0") + "%" : "<1%", OverviewStyles.MutedRight);
             return rect;
         }
 

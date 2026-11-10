@@ -13,12 +13,12 @@ using UnityEngine.UIElements;
 namespace Supercent.LunaTextureOptimizer.Editor
 {
     // Sounds tab of the Luna Optimizer (UI Toolkit): every sound Luna ships in a sortable table, and a details panel
-    // for the selected one (Source / Luna waveforms and playback, format, bitrate, channels, what uses it).
+    // for the selected one (Source / Luna waveforms and playback, trim, format, bitrate, channels, what uses it).
     // Changes stay in memory and are predicted; the hub's Save all writes them as Luna per-sound overrides.
     [Serializable]
     public class SoundOptimizerView : OptimizerView
     {
-        const float ROW_HEIGHT = 22f;
+        const float ROW_HEIGHT = 24f;
         const int LOAD_TIMEOUT_MS = 5000;
         const float DETAILS_WIDTH = 400f;
         const int WAVE_WIDTH = 512;
@@ -26,6 +26,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
         const string KEEP_FORMAT = "Format: keep";
         const string KEEP_BITRATE = "Bitrate: keep";
         const string KEEP_CHANNELS = "Channels: keep";
+        const long TRIM_COMMIT_DELAY_MS = 350;   // range slider: predict once the handles rest (and the drag ended)
         static readonly Color SOURCE_WAVE = new Color(0.55f, 0.75f, 0.95f);
         static readonly Color LUNA_WAVE = new Color(0.45f, 0.85f, 0.5f);
 
@@ -34,8 +35,6 @@ namespace Supercent.LunaTextureOptimizer.Editor
             Pick,
             Name,
             Source,
-            Length,
-            SourceChannels,
             Format,
             Bitrate,
             Channels,
@@ -69,6 +68,12 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
         // UI Toolkit elements, rebuilt by CreateUI after every reload.
         MultiColumnListView table;
+        VisualElement statStrip;
+        VisualElement bulkBar;
+        VisualElement bulkEdit;
+        Label bulkHint;
+        SearchBar searchBar;
+        double largestPredicted;
         Label summaryLabel;
         HelpBox staleBox;
         VisualElement staleRow;
@@ -81,8 +86,10 @@ namespace Supercent.LunaTextureOptimizer.Editor
         DropdownField bulkChannelsField;
         Button bulkApplyButton;
         Button untickButton;
+        Button bulkTrimButton;
         ToolbarButton predictButton;
         ScrollView details;
+        IVisualElementScheduledItem trimCommit;
 
         public override string Title
         {
@@ -165,8 +172,24 @@ namespace Supercent.LunaTextureOptimizer.Editor
         // of its own; any other stale override is removed. Asks first.
         void RepairStaleOverrides()
         {
-            var moves = new Dictionary<string, string>();
-            var removals = new List<string>();
+            Dictionary<string, string> moves;
+            List<string> removals;
+            PlanStaleRepair(out moves, out removals);
+            var lines = moves.Select(m => "Move  " + m.Key + "\n   → " + m.Value)
+                .Concat(removals.Select(r => "Remove  " + r)).ToList();
+            if (!EditorUtility.DisplayDialog("Fix stale sound overrides",
+                    string.Join("\n", lines) + "\n\nMoved overrides keep their bitrate and channels. Write these changes to "
+                    + LunaSettings.FILE_NAME + "?", "Fix", "Cancel"))
+                return;
+            string error;
+            if (!ApplyStaleRepair(moves, removals, out error))
+                EditorUtility.DisplayDialog("Fix stale sound overrides", "Nothing was changed.\n\n" + error, "OK");
+        }
+
+        void PlanStaleRepair(out Dictionary<string, string> moves, out List<string> removals)
+        {
+            moves = new Dictionary<string, string>();
+            removals = new List<string>();
             foreach (var name in staleOverrides)
             {
                 var fileName = Path.GetFileName(name);
@@ -176,21 +199,14 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 else
                     removals.Add(name);
             }
+        }
 
-            var lines = moves.Select(m => "Move  " + m.Key + "\n   → " + m.Value)
-                .Concat(removals.Select(r => "Remove  " + r)).ToList();
-            if (!EditorUtility.DisplayDialog("Fix stale sound overrides",
-                    string.Join("\n", lines) + "\n\nMoved overrides keep their bitrate and channels. Write these changes to "
-                    + LunaSettings.FILE_NAME + "?", "Fix", "Cancel"))
-                return;
-
-            string error;
+        bool ApplyStaleRepair(Dictionary<string, string> moves, List<string> removals, out string error)
+        {
             if (!LunaSettingsWriter.RepairSoundOverrides(moves, removals, projectRoot, out error))
-            {
-                EditorUtility.DisplayDialog("Fix stale sound overrides", "Nothing was changed.\n\n" + error, "OK");
-                return;
-            }
+                return false;
             Refresh();
+            return true;
         }
 
         static string PickOpusFfmpeg()
@@ -259,7 +275,8 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 change(entry, rule);
                 LunaSoundFormat.RefreshScript(rule);
                 if (rule.bitrate == saved.bitrate && rule.channels == saved.channels
-                    && (rule.script ?? string.Empty) == (saved.script ?? string.Empty) && (rule.ext ?? string.Empty) == (saved.ext ?? string.Empty))
+                    && (rule.script ?? string.Empty) == (saved.script ?? string.Empty) && (rule.ext ?? string.Empty) == (saved.ext ?? string.Empty)
+                    && SameTrim(rule, saved))
                 {
                     entry.LunaRule = saved;
                     entry.SavedRule = null;
@@ -281,6 +298,293 @@ namespace Supercent.LunaTextureOptimizer.Editor
             ApplySortAndFilter();
         }
 
+        static bool SameTrim(LunaSoundRule a, LunaSoundRule b)
+        {
+            var aWhole = string.IsNullOrEmpty(a.endTime) || a.endTime == LunaSoundPipeline.NO_TIME;
+            var bWhole = string.IsNullOrEmpty(b.endTime) || b.endTime == LunaSoundPipeline.NO_TIME;
+            return aWhole && bWhole || !aWhole && !bWhole && a.startTime == b.startTime && a.endTime == b.endTime;
+        }
+
+        void SetTrim(SoundEntry entry, float start, float end)
+        {
+            if (entry.Format == SoundFormat.Custom)
+                return;
+            ChangeRule(entry, rule => SoundTrim.Apply(rule, start, end, entry.LengthSeconds));
+        }
+
+        // Leaves out leading and trailing silence, inside any trim already set (never makes a sound longer).
+        // Returns how many sounds changed.
+        int TrimSilence(IList<SoundEntry> targets)
+        {
+            var ranges = new Dictionary<SoundEntry, Vector2>();
+            try
+            {
+                for (int i = 0; i < targets.Count; i++)
+                {
+                    var entry = targets[i];
+                    if (targets.Count > 1 && EditorUtility.DisplayCancelableProgressBar("Trim silence", entry.FileName, (float)i / targets.Count))
+                        break;
+                    if (entry.Format == SoundFormat.Custom)
+                        continue;
+                    var clip = LoadClip(Path.GetFullPath(entry.AssetPath));
+                    float start;
+                    float end;
+                    var found = SoundTrim.FindSound(clip, out start, out end);
+                    if (clip != null)
+                        UnityEngine.Object.DestroyImmediate(clip);
+                    if (!found)
+                        continue;
+                    start = Mathf.Max(start, SoundTrim.Start(entry));
+                    end = Mathf.Min(end, SoundTrim.End(entry));
+                    if (start - SoundTrim.Start(entry) + SoundTrim.End(entry) - end >= SoundTrim.MIN_LENGTH)
+                        ranges[entry] = new Vector2(start, end);
+                }
+            }
+            finally
+            {
+                if (targets.Count > 1)
+                    EditorUtility.ClearProgressBar();
+            }
+            if (ranges.Count > 0)
+                ChangeRules(ranges.Keys.ToList(), (entry, rule) => SoundTrim.Apply(rule, ranges[entry].x, ranges[entry].y, entry.LengthSeconds));
+            return ranges.Count;
+        }
+
+        // ---------------------------------------------------------------- for the browser page (LunaOptimizerWebApi)
+
+        public const string NEEDS_CONFIRM = "confirm";
+
+        public LunaSettings Settings
+        {
+            get { return settings; }
+        }
+
+        public bool CanRenderAudio
+        {
+            get { return CanPredict; }
+        }
+
+        public SoundEntry Find(string assetPath)
+        {
+            return entries.FirstOrDefault(e => e.AssetPath == assetPath);
+        }
+
+        public static List<string> FormatLabels()
+        {
+            return FORMATS.Select(LunaSoundFormat.Label).ToList();
+        }
+
+        // Null when done; NEEDS_CONFIRM when Opus risks must be shown first; else what went wrong.
+        public string PickFormat(SoundEntry entry, string label, bool confirmed)
+        {
+            if (entry.Format == SoundFormat.Custom)
+                return "This sound uses a custom Luna script; it is left as it is.";
+            var index = FormatLabels().IndexOf(label);
+            if (index < 0 || FORMATS[index] == entry.Format)
+                return null;
+            var format = FORMATS[index];
+            string ffmpeg = null;
+            if (LunaSoundFormat.IsOpus(format))
+            {
+                if (!confirmed)
+                    return NEEDS_CONFIRM;
+                ffmpeg = LunaSoundFormat.FindOpusFfmpeg();
+                if (ffmpeg == null)
+                    return "No ffmpeg with the libopus encoder was found (Luna's own ffmpeg has none). Install one (brew install ffmpeg) or pick it in Unity: Sounds tab › Encoder….";
+            }
+            ChangeRule(entry, rule => ApplyFormat(entry, rule, format, ffmpeg));
+            return null;
+        }
+
+        public List<string> BitrateLabels(SoundEntry entry, out int selected)
+        {
+            var values = BitratesFor(entry.Format).ToList();
+            var current = entry.LunaRule.bitrate;
+            if (!values.Contains(current))
+                values.Insert(0, current);
+            selected = values.IndexOf(current);
+            return values.Select(v => v > 0 ? v + " kbps" : "VBR (q8)").ToList();
+        }
+
+        public void PickBitrate(SoundEntry entry, string label)
+        {
+            var bitrate = ParseBitrate(label);
+            if (entry.Format != SoundFormat.Custom && bitrate.HasValue && bitrate.Value != entry.LunaRule.bitrate)
+                ChangeRule(entry, rule => rule.bitrate = bitrate.Value);
+        }
+
+        public List<string> ChannelLabels(SoundEntry entry, out int selected)
+        {
+            var labels = CHANNEL_LABELS.ToList();
+            selected = Array.IndexOf(CHANNEL_VALUES, entry.LunaRule.channels);
+            if (selected < 0)
+            {
+                labels.Add(entry.LunaRule.channels + " ch");
+                selected = labels.Count - 1;
+            }
+            return labels;
+        }
+
+        public void PickChannels(SoundEntry entry, string label)
+        {
+            var index = Array.IndexOf(CHANNEL_LABELS, label);
+            if (entry.Format != SoundFormat.Custom && index >= 0 && CHANNEL_VALUES[index] != entry.LunaRule.channels)
+                ChangeRule(entry, rule => rule.channels = CHANNEL_VALUES[index]);
+        }
+
+        public void SetTrimSeconds(SoundEntry entry, float start, float end)
+        {
+            SetTrim(entry, start, end);
+        }
+
+        public int TrimSilence(IEnumerable<string> paths)
+        {
+            return TrimSilence(paths.Select(Find).Where(e => e != null).ToList());
+        }
+
+        public static List<string> BulkChannelLabels()
+        {
+            return new[] { KEEP_CHANNELS }.Concat(CHANNEL_LABELS).ToList();
+        }
+
+        public List<int> BulkBitrateValues(IEnumerable<string> paths, int formatIndex)
+        {
+            var saved = bulkFormat;
+            bulkFormat = formatIndex > 0 ? FORMATS[formatIndex - 1] : (SoundFormat?)null;
+            try
+            {
+                return BulkBitrates(paths.Select(Find).Where(e => e != null).ToList());
+            }
+            finally
+            {
+                bulkFormat = saved;
+            }
+        }
+
+        // formatIndex / channelIndex: into FormatLabels / CHANNEL_LABELS plus 1 (0 = keep); bitrate 0 = keep.
+        public string ApplyBulk(IEnumerable<string> paths, int formatIndex, int bitrate, int channelIndex, bool confirmed)
+        {
+            var targets = paths.Select(Find).Where(e => e != null).ToList();
+            SoundFormat? format = formatIndex > 0 ? FORMATS[formatIndex - 1] : (SoundFormat?)null;
+            string ffmpeg = null;
+            if (format.HasValue && LunaSoundFormat.IsOpus(format.Value) && targets.Any(e => e.Format != SoundFormat.Custom && e.Format != format.Value))
+            {
+                if (!confirmed)
+                    return NEEDS_CONFIRM;
+                ffmpeg = LunaSoundFormat.FindOpusFfmpeg();
+                if (ffmpeg == null)
+                    return "No ffmpeg with the libopus encoder was found. Install one (brew install ffmpeg) or pick it in Unity: Sounds tab › Encoder….";
+            }
+            return ApplyBulkCore(targets, format, bitrate > 0 ? bitrate : (int?)null, channelIndex > 0 ? CHANNEL_VALUES[channelIndex - 1] : (int?)null, ffmpeg);
+        }
+
+        // The file the browser plays as "Luna": Luna's output for the current rule (decoded to .wav for Opus), made on demand.
+        public string LunaAudioPath(SoundEntry entry, out string error)
+        {
+            error = null;
+            if (!CanPredict)
+            {
+                error = "No Luna ffmpeg found.";
+                return null;
+            }
+            var path = LunaSoundPipeline.PreviewPathFor(entry, projectRoot, install);
+            if (!File.Exists(path))
+            {
+                var predictions = LunaSoundPipeline.PredictMany(new[] { entry }, install, projectRoot, null, null);
+                if (predictions[0] != null)
+                    entry.Prediction = predictions[0];
+            }
+            if (!File.Exists(path))
+            {
+                error = "Could not make the Luna output" + (entry.Prediction != null ? ": " + entry.Prediction.error : ".");
+                return null;
+            }
+            return path;
+        }
+
+        public IReadOnlyList<string> StaleOverrides
+        {
+            get { return staleOverrides; }
+        }
+
+        public string StaleRepairPlan()
+        {
+            Dictionary<string, string> moves;
+            List<string> removals;
+            PlanStaleRepair(out moves, out removals);
+            return string.Join("\n", moves.Select(m => "Move " + m.Key + " → " + m.Value).Concat(removals.Select(r => "Remove " + r)));
+        }
+
+        public bool RepairStale(out string error)
+        {
+            Dictionary<string, string> moves;
+            List<string> removals;
+            PlanStaleRepair(out moves, out removals);
+            return ApplyStaleRepair(moves, removals, out error);
+        }
+
+        public int OpusCount
+        {
+            get { return entries.Count(e => LunaSoundFormat.IsOpus(e.Format)); }
+        }
+
+        public void Rescan()
+        {
+            Refresh();
+        }
+
+        // ---------------------------------------------------------------- for the hub's Simple mode
+
+        public int Count
+        {
+            get { return entries.Count; }
+        }
+
+        public int PredictedCount
+        {
+            get { return entries.Count(e => e.HasPrediction); }
+        }
+
+        public double PredictedTotalBytes
+        {
+            get { return entries.Where(e => e.HasPrediction).Sum(e => e.PlayableBytes); }
+        }
+
+        // Predicted bytes the unsaved changes save (negative when they add).
+        public double PendingSavingBytes
+        {
+            get { return entries.Where(e => e.HasPendingChange && e.HasPrediction && e.PendingFromBytes >= 0).Sum(e => e.PendingFromBytes - e.PlayableBytes); }
+        }
+
+        public IReadOnlyList<SoundEntry> Entries
+        {
+            get { return entries; }
+        }
+
+        public bool CanPredictSizes
+        {
+            get { return CanPredict && entries.Any(e => e.Prediction == null); }
+        }
+
+        public void PredictAll()
+        {
+            if (CanPredict)
+                PredictMissing();
+        }
+
+        public int TrimSilenceAll()
+        {
+            return TrimSilence(entries);
+        }
+
+        public int MonoAll()
+        {
+            var targets = entries.Where(e => e.Format != SoundFormat.Custom && e.LunaRule.channels != 1).ToList();
+            if (targets.Count > 0)
+                ChangeRules(targets, (entry, rule) => rule.channels = 1);
+            return targets.Count;
+        }
+
         // Bitrates offered in the bar: those of the chosen format, else every bitrate valid for at least one ticked sound's format.
         List<int> BulkBitrates(List<SoundEntry> targets)
         {
@@ -299,13 +603,20 @@ namespace Supercent.LunaTextureOptimizer.Editor
 
         void ApplyBulk(List<SoundEntry> targets, SoundFormat? format, int? bitrate, int? channels)
         {
-            var custom = targets.Where(e => e.Format == SoundFormat.Custom).ToList();
-            targets = targets.Except(custom).ToList();
             string ffmpeg = null;
-            if (format.HasValue && targets.Any(e => e.Format != format.Value)
+            if (format.HasValue && targets.Any(e => e.Format != SoundFormat.Custom && e.Format != format.Value)
                 && !ConfirmFormat(format.Value, targets.Count + " sound(s)", out ffmpeg))
                 return;
+            var note = ApplyBulkCore(targets, format, bitrate, channels, ffmpeg);
+            if (note != null)
+                EditorUtility.DisplayDialog("Apply to ticked sounds", note, "OK");
+        }
 
+        // ffmpeg: the Opus encoder when switching to Opus (already confirmed). Returns what was left as it was, or null.
+        string ApplyBulkCore(List<SoundEntry> targets, SoundFormat? format, int? bitrate, int? channels, string ffmpeg)
+        {
+            var custom = targets.Where(e => e.Format == SoundFormat.Custom).ToList();
+            targets = targets.Except(custom).ToList();
             var bitrateKept = new List<string>();
             ChangeRules(targets, (entry, rule) =>
             {
@@ -327,8 +638,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 notes.Add("Left as they are (custom Luna script): " + LunaSaveHistory.Names(custom.Select(e => e.FileName)));
             if (bitrateKept.Count > 0)
                 notes.Add(bitrate + " kbps does not exist for their format (MP3 32–160, Opus 16–128), bitrate kept: " + LunaSaveHistory.Names(bitrateKept));
-            if (notes.Count > 0)
-                EditorUtility.DisplayDialog("Apply to ticked sounds", string.Join("\n\n", notes), "OK");
+            return notes.Count > 0 ? string.Join("\n\n", notes) : null;
         }
 
         double PlayableBytesFor(SoundEntry entry, LunaSoundRule rule)
@@ -364,8 +674,11 @@ namespace Supercent.LunaTextureOptimizer.Editor
             var root = new VisualElement();
             root.AddToClassList("lo-tab-root");
             root.Add(CreateToolbar());
+            statStrip = OptimizerUI.StatStrip();
+            root.Add(statStrip);
             summaryLabel = new Label();
             summaryLabel.AddToClassList("lo-summary");
+            summaryLabel.AddToClassList("lo-warning");
             root.Add(summaryLabel);
 
             staleBox = new HelpBox(string.Empty, HelpBoxMessageType.Warning);
@@ -379,12 +692,14 @@ namespace Supercent.LunaTextureOptimizer.Editor
             });
             root.Add(opusRow);
             root.Add(CreateBulkBar());
+            searchBar.RegisterShortcut(root);
 
             var split = new TwoPaneSplitView(1, DETAILS_WIDTH, TwoPaneSplitViewOrientation.Horizontal) { viewDataKey = "lo-sounds-split" };
             split.AddToClassList("lo-split");
             split.Add(CreateTable());
             details = new ScrollView();
             details.AddToClassList("lo-details");
+            details.contentContainer.AddToClassList("lo-details-content");
             split.Add(details);
             root.Add(split);
 
@@ -406,21 +721,12 @@ namespace Supercent.LunaTextureOptimizer.Editor
         VisualElement CreateToolbar()
         {
             var toolbar = new Toolbar();
-            toolbar.Add(new ToolbarButton(Refresh) { text = "Refresh", tooltip = "Scan again: sounds, Luna settings and the last build." });
+            toolbar.AddToClassList("lo-tab-toolbar");
+            toolbar.Add(OptimizerUI.IconButton("d_Refresh", "Refresh", "Scan again: sounds, Luna settings and the last build.", Refresh));
             predictButton = new ToolbarButton(PredictMissing) { text = "Predict", tooltip = "Run Luna's sound step locally for sounds without an up-to-date prediction." };
             toolbar.Add(predictButton);
-            toolbar.Add(new ToolbarButton(StopPreview) { text = "Stop", tooltip = "Stop the sound being played." });
-            var spacer = new VisualElement();
-            spacer.AddToClassList("lo-spacer");
-            toolbar.Add(spacer);
-            var search = new ToolbarSearchField { value = searchText };
-            search.AddToClassList("lo-search");
-            search.RegisterValueChangedCallback(change =>
-            {
-                searchText = change.newValue ?? string.Empty;
-                ApplySortAndFilter();
-            });
-            toolbar.Add(search);
+            toolbar.Add(new ToolbarSpacer());
+            toolbar.Add(new ToolbarButton(StopPreview) { text = "■ Stop", tooltip = "Stop the sound being played." });
             return toolbar;
         }
 
@@ -428,8 +734,19 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             var bar = new VisualElement();
             bar.AddToClassList("lo-bulkbar");
-            allShownToggle = new Toggle("All shown") { tooltip = "Tick or untick every sound the search shows." };
-            allShownToggle.AddToClassList("lo-bulk-all");
+            bulkBar = bar;
+            searchBar = new SearchBar(searchText, "Search sounds by name or path   (Ctrl/Cmd+F)", value =>
+            {
+                searchText = value;
+                ApplySortAndFilter();
+            });
+            bar.Add(searchBar);
+            var gap = new VisualElement();
+            gap.AddToClassList("lo-spacer");
+            bar.Add(gap);
+            // Lives in the tick column's header (see CreateTable).
+            allShownToggle = new Toggle { tooltip = "Tick or untick every sound the search shows." };
+            allShownToggle.AddToClassList("lo-header-toggle");
             allShownToggle.RegisterValueChangedCallback(change =>
             {
                 foreach (var entry in visibleEntries)
@@ -441,10 +758,16 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 }
                 RefreshUI();
             });
-            bar.Add(allShownToggle);
             tickedLabel = new Label();
             tickedLabel.AddToClassList("lo-bulk-count");
             bar.Add(tickedLabel);
+            bulkHint = new Label("Tick sounds to change their format, bitrate, channels or trim together.");
+            bulkHint.AddToClassList("lo-muted");
+            bulkHint.AddToClassList("lo-bulk-hint");
+            bar.Add(bulkHint);
+            bulkEdit = new VisualElement();
+            bulkEdit.AddToClassList("lo-bulk-edit");
+            bar.Add(bulkEdit);
             bulkFormatField = new DropdownField(new[] { KEEP_FORMAT }.Concat(FORMATS.Select(LunaSoundFormat.Label)).ToList(), 0);
             bulkFormatField.AddToClassList("lo-bulk-field");
             bulkFormatField.RegisterValueChangedCallback(change =>
@@ -453,15 +776,15 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 bulkFormat = index >= 0 ? FORMATS[index] : (SoundFormat?)null;
                 RefreshBulkBar();
             });
-            bar.Add(bulkFormatField);
+            bulkEdit.Add(bulkFormatField);
             bulkBitrateField = new DropdownField(new List<string> { KEEP_BITRATE }, 0);
             bulkBitrateField.AddToClassList("lo-bulk-field");
             bulkBitrateField.RegisterValueChangedCallback(_ => RefreshBulkBar());
-            bar.Add(bulkBitrateField);
+            bulkEdit.Add(bulkBitrateField);
             bulkChannelsField = new DropdownField(new[] { KEEP_CHANNELS }.Concat(CHANNEL_LABELS).ToList(), 0);
             bulkChannelsField.AddToClassList("lo-bulk-field");
             bulkChannelsField.RegisterValueChangedCallback(_ => RefreshBulkBar());
-            bar.Add(bulkChannelsField);
+            bulkEdit.Add(bulkChannelsField);
             bulkApplyButton = new Button(() =>
             {
                 var targets = TickedVisible();
@@ -471,13 +794,20 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 var channels = channelIndex >= 0 ? CHANNEL_VALUES[channelIndex] : (int?)null;
                 EditorApplication.delayCall += () => ApplyBulk(targets, format, bitrate, channels);
             }) { tooltip = "Change the ticked sounds; nothing is written until Save all." };
-            bar.Add(bulkApplyButton);
+            bulkApplyButton.AddToClassList("lo-primary");
+            bulkEdit.Add(bulkApplyButton);
+            bulkTrimButton = new Button(() =>
+            {
+                var targets = TickedVisible();
+                EditorApplication.delayCall += () => ShowTrimResult(TrimSilence(targets));
+            }) { text = "Trim silence", tooltip = "Leave out leading and trailing silence of the ticked sounds (within any trim already set). Nothing is written until Save all." };
+            bulkEdit.Add(bulkTrimButton);
             untickButton = new Button(() =>
             {
                 ticked.Clear();
                 RefreshUI();
-            }) { text = "Untick all" };
-            bar.Add(untickButton);
+            }) { text = "Clear" };
+            bulkEdit.Add(untickButton);
             return bar;
         }
 
@@ -516,27 +846,40 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 label.tooltip = e.AssetPath + (queued ? "\nWaiting in the Luna Exclusions window (Pending)." : string.Empty);
                 label.EnableInClassList("lo-excluding", queued);
             }, null);
-            AddLabelColumn(Column.Source, "Source", 80f, true, e => e.Extension.TrimStart('.') + " · " + FormatBytes(e.FileBytes), null);
-            AddLabelColumn(Column.Length, "Length", 56f, true, e => e.LengthSeconds.ToString("0.0") + " s", null);
-            AddLabelColumn(Column.SourceChannels, "Exported", 110f, false, ExportedText, ExportedTooltip, e => !e.UsesSourceFile);
+            AddLabelColumn(Column.Source, "Source", 100f, true, e => e.Extension.TrimStart('.') + " · " + FormatBytes(e.FileBytes), null);
             AddColumn(Column.Format, "Format", 100f, false, () => new DropdownField(), (element, entry) => BindFormatField((DropdownField)element, entry),
                 element => ((DropdownField)element).RegisterValueChangedCallback(change => OnFormatPicked((DropdownField)element, change.newValue)));
             AddColumn(Column.Bitrate, "Bitrate", 90f, false, () => new DropdownField(), (element, entry) => BindBitrateField((DropdownField)element, entry),
                 element => ((DropdownField)element).RegisterValueChangedCallback(change => OnBitratePicked((DropdownField)element, change.newValue)));
             AddColumn(Column.Channels, "Channels", 100f, false, () => new DropdownField(), (element, entry) => BindChannelsField((DropdownField)element, entry),
                 element => ((DropdownField)element).RegisterValueChangedCallback(change => OnChannelsPicked((DropdownField)element, change.newValue)));
-            AddLabelColumn(Column.Trim, "Trim", 90f, false, e => e.HasTrim ? e.LunaRule.startTime + "–" + e.LunaRule.endTime : "–",
-                e => e.HasTrim ? "Trim set in the Luna window" : null);
-            AddColumn(Column.Predicted, "Predicted", 86f, true, () => new Label(), (element, entry) => BindPrediction((Label)element, entry), null);
+            AddColumn(Column.Trim, "Trim (s)", 132f, false, () =>
+            {
+                var row = new VisualElement();
+                row.AddToClassList("lo-trim-cell");
+                row.Add(TrimField());
+                row.Add(new Label("–"));
+                row.Add(TrimField());
+                return row;
+            }, BindTrimCell, element =>
+            {
+                ((FloatField)element[0]).RegisterValueChangedCallback(change => OnTrimEdited(element, change.newValue, null));
+                ((FloatField)element[2]).RegisterValueChangedCallback(change => OnTrimEdited(element, null, change.newValue));
+            });
+            AddColumn(Column.Predicted, "Predicted", 120f, true, OptimizerUI.SizeCell, (element, entry) =>
+            {
+                BindPrediction((Label)element[1], entry);
+                OptimizerUI.SetHeat(element, entry.PlayableBytes, largestPredicted);
+            }, null);
             AddLabelColumn(Column.LastBuild, "Last build", 86f, true,
                 e => e.HasLastBuild ? FormatBytes(e.LastBuildBytes) + (e.LastBuildOutdated ? " (old)" : string.Empty) : "–",
                 e => e.LastBuildOutdated ? "The sound changed after the last Luna build." : null);
-            AddColumn(Column.Listen, "Listen", 104f, false, () =>
+            AddColumn(Column.Listen, "Listen", 116f, false, () =>
             {
                 var buttons = new VisualElement();
-                buttons.AddToClassList("lo-row");
-                buttons.Add(new Button { text = "Source", tooltip = "Play the clip as Unity imported it." });
-                buttons.Add(new Button { text = "Luna", tooltip = "Play what Luna would ship with the current settings." });
+                buttons.AddToClassList("lo-listen");
+                buttons.Add(new Button { text = "▶ Src", tooltip = "Play the clip as Unity imported it." });
+                buttons.Add(new Button { text = "▶ Luna", tooltip = "Play what Luna would ship with the current settings." });
                 return buttons;
             }, (element, entry) => element[1].SetEnabled(CanPredict), element =>
             {
@@ -568,6 +911,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
             table.columns.Add(new UnityEngine.UIElements.Column
             {
                 name = column.ToString(),
+                makeHeader = column == Column.Pick ? () => allShownToggle : (Func<VisualElement>)null,
                 title = title,
                 width = width,
                 minWidth = Mathf.Min(width, 40f),
@@ -646,6 +990,39 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 ? "Luna copies this .wav file unchanged; Unity's import settings do not apply."
                 : "Luna decodes Unity's imported clip (Load Type " + entry.LoadType + (entry.ForceToMono ? ", Force To Mono" : string.Empty)
                     + "), so Unity's import settings and compression reach the build.";
+        }
+
+        static FloatField TrimField()
+        {
+            var field = new FloatField { isDelayed = true, formatString = "0.00" };
+            field.AddToClassList("lo-trim-field");
+            return field;
+        }
+
+        // Start and end in seconds of the part Luna keeps; editing either one trims the sound.
+        void BindTrimCell(VisualElement element, SoundEntry entry)
+        {
+            var start = (FloatField)element[0];
+            var end = (FloatField)element[2];
+            start.SetValueWithoutNotify(SoundTrim.Start(entry));
+            end.SetValueWithoutNotify(SoundTrim.End(entry));
+            var editable = entry.Format != SoundFormat.Custom;
+            start.SetEnabled(editable);
+            end.SetEnabled(editable);
+            element.EnableInClassList("lo-trimmed", entry.HasTrim && SoundTrim.Kept(entry) < entry.LengthSeconds - 0.01f);
+            element.tooltip = editable
+                ? "Seconds Luna keeps of the " + entry.LengthSeconds.ToString("0.00") + " s clip. Type a start or end to trim."
+                : "Custom Luna script: trim is left as it is.";
+        }
+
+        void OnTrimEdited(VisualElement element, float? start, float? end)
+        {
+            var entry = EntryOf(element);
+            if (entry == null)
+                return;
+            var newStart = start ?? SoundTrim.Start(entry);
+            var newEnd = end ?? SoundTrim.End(entry);
+            EditorApplication.delayCall += () => SetTrim(entry, newStart, newEnd);
         }
 
         void BindFormatField(DropdownField field, SoundEntry entry)
@@ -761,6 +1138,8 @@ namespace Supercent.LunaTextureOptimizer.Editor
                 + "Luna input: " + (prediction.usedSourceFile ? "your .wav file" : "Unity's decoded import") + ", " + FormatBytes(prediction.inputBytes)
                 + (LunaSoundFormat.IsOpus(entry.Format) ? "\nOpus: same script Luna will run; not yet compared with a real Luna build" : string.Empty);
             label.text = FormatBytes(entry.PlayableBytes);
+            if (entry.HasPendingChange && entry.PendingFromBytes >= 0)
+                label.text += "  " + OptimizerUI.Delta(entry.PlayableBytes - entry.PendingFromBytes);
             if (entry.HasPendingChange)
             {
                 tooltip = "Unsaved change" + (entry.PendingFromBytes >= 0 ? ", was " + FormatBytes(entry.PendingFromBytes) : string.Empty) + "\n" + tooltip;
@@ -779,6 +1158,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             if (table == null)
                 return;
+            largestPredicted = visibleEntries.Count > 0 ? visibleEntries.Max(e => e.PlayableBytes) : 0;
             table.itemsSource = visibleEntries;
             table.RefreshItems();
             var index = selectedPath != null ? visibleEntries.FindIndex(e => e.AssetPath == selectedPath) : -1;
@@ -787,19 +1167,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
             else
                 table.ClearSelection();
 
-            var summary = entries.Count + " sounds  ·  source files " + FormatBytes(entries.Sum(e => e.FileBytes));
-            var predicted = entries.Where(e => e.HasPrediction).ToList();
-            if (predicted.Count > 0)
-                summary += "  ·  predicted " + FormatBytes(predicted.Sum(e => e.PlayableBytes)) + " in playable (base64)"
-                    + (predicted.Count < entries.Count ? " (" + predicted.Count + "/" + entries.Count + ")" : string.Empty);
-            if (stats != null)
-                summary += "  ·  last build " + FormatBytes(entries.Where(e => e.HasLastBuild).Sum(e => e.LastBuildBytes))
-                    + " (" + stats.BuiltAt.ToString("yyyy-MM-dd HH:mm") + ")";
-            if (settings == null)
-                summary = LunaSettings.FILE_NAME + " not found in the project root. Open the Luna window once to create it.";
-            else if (!CanPredict)
-                summary += "  ·  no Luna install with ffmpeg found, so sizes cannot be predicted";
-            summaryLabel.text = summary + OptimizerUI.ExcludedNote(settings);
+            RefreshStats();
 
             staleRow.style.display = staleOverrides.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
             staleBox.text = staleOverrides.Count + " Luna sound override(s) name files that no longer exist, so Luna ignores them and those sounds use the default rule.";
@@ -820,14 +1188,49 @@ namespace Supercent.LunaTextureOptimizer.Editor
             RefreshDetails();
         }
 
+        void RefreshStats()
+        {
+            statStrip.Clear();
+            string problem = null;
+            if (settings == null)
+                problem = LunaSettings.FILE_NAME + " not found in the project root. Open the Luna window once to create it.";
+            else if (!CanPredict)
+                problem = "No Luna install with ffmpeg found, so sizes cannot be predicted.";
+            summaryLabel.text = problem ?? string.Empty;
+            summaryLabel.style.display = problem != null ? DisplayStyle.Flex : DisplayStyle.None;
+            if (settings == null)
+                return;
+
+            OptimizerUI.AddStat(statStrip, entries.Count.ToString(), "sounds");
+            OptimizerUI.AddStat(statStrip, FormatBytes(entries.Sum(e => e.FileBytes)), "source files");
+            OptimizerUI.AddStat(statStrip, entries.Sum(e => SoundTrim.Kept(e)).ToString("0.0") + " s", "audio kept", "Total length Luna ships after trims.");
+            var predicted = entries.Where(e => e.HasPrediction).ToList();
+            if (predicted.Count > 0)
+                OptimizerUI.AddStat(statStrip, FormatBytes(predicted.Sum(e => e.PlayableBytes)),
+                    "predicted in playable" + (predicted.Count < entries.Count ? " (" + predicted.Count + "/" + entries.Count + ")" : string.Empty),
+                    "What Luna would ship for these sounds (base64) with the current (unsaved included) settings.", "lo-stat--key");
+            if (PendingCount > 0)
+                OptimizerUI.AddStat(statStrip, OptimizerUI.Delta(-PendingSavingBytes), PendingCount + " unsaved", "Predicted change once saved.", "lo-stat--accent");
+            if (stats != null)
+                OptimizerUI.AddStat(statStrip, FormatBytes(entries.Where(e => e.HasLastBuild).Sum(e => e.LastBuildBytes)), "last build",
+                    "Built " + stats.BuiltAt.ToString("yyyy-MM-dd HH:mm"));
+            var excluded = OptimizerUI.ExcludedCount(settings);
+            if (excluded > 0)
+                OptimizerUI.AddStat(statStrip, excluded.ToString(), "excluded", "Excluded assets/folders are not listed: see Exclusions.");
+        }
+
         void RefreshBulkBar()
         {
             if (tickedLabel == null)
                 return;
+            searchBar.SetCount(visibleEntries.Count, entries.Count);
             var targets = TickedVisible();
             var hidden = ticked.Count - targets.Count;
             allShownToggle.SetValueWithoutNotify(visibleEntries.Count > 0 && targets.Count == visibleEntries.Count);
-            tickedLabel.text = targets.Count + " ticked" + (hidden > 0 ? " (+" + hidden + " hidden)" : string.Empty);
+            tickedLabel.text = targets.Count > 0 ? targets.Count + " selected" + (hidden > 0 ? " (+" + hidden + " hidden)" : string.Empty) : string.Empty;
+            bulkBar.EnableInClassList("lo-bulkbar--active", targets.Count > 0);
+            bulkEdit.style.display = targets.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            bulkHint.style.display = targets.Count > 0 ? DisplayStyle.None : DisplayStyle.Flex;
             tickedLabel.tooltip = hidden > 0 ? "Ticked sounds the search hides are not changed." : null;
 
             var bitrates = new[] { KEEP_BITRATE }.Concat(BulkBitrates(targets).Select(b => b + " kbps")).ToList();
@@ -839,6 +1242,12 @@ namespace Supercent.LunaTextureOptimizer.Editor
             bulkApplyButton.text = "Apply to " + targets.Count;
             bulkApplyButton.SetEnabled(targets.Count > 0 && anyChange);
             untickButton.SetEnabled(ticked.Count > 0);
+            bulkTrimButton.SetEnabled(targets.Count > 0);
+        }
+
+        void ShowTrimResult(int changed)
+        {
+            ShowNotification(new GUIContent(changed == 0 ? "No silence to trim" : changed + " sound(s) trimmed: review, then Save all"));
         }
 
         // ---------------------------------------------------------------- details panel
@@ -856,19 +1265,36 @@ namespace Supercent.LunaTextureOptimizer.Editor
             var entry = SelectedEntry;
             if (entry == null)
             {
-                var empty = new Label("Select a sound to hear and see Luna's output, change its format, bitrate and channels, and see what uses it.");
+                var empty = new Label("Select a sound to hear Luna's output, trim it, change its format, bitrate and channels, and see what uses it.");
                 empty.AddToClassList("lo-empty");
                 details.Add(empty);
                 return;
             }
 
-            var title = new Label(entry.FileName);
-            title.AddToClassList("lo-details-title");
-            details.Add(title);
-            details.Add(OptimizerUI.LinkLabel(entry.AssetPath, entry.AssetPath, "lo-small"));
+            var badges = new List<Label>
+            {
+                entry.IsLunaOverride ? OptimizerUI.Badge("Override", null, "Per-sound override in Luna") : OptimizerUI.Badge("Default rule", null, "Uses Luna's default sound rule"),
+                OptimizerUI.Badge(LunaSoundFormat.Label(entry.Format), null, "Format Luna ships"),
+            };
+            if (entry.HasTrim && SoundTrim.Kept(entry) < entry.LengthSeconds - 0.01f)
+                badges.Add(OptimizerUI.Badge("Trimmed", null, "Luna keeps " + SoundTrim.Kept(entry).ToString("0.00") + " of " + entry.LengthSeconds.ToString("0.00") + " s"));
+            if (entry.HasPendingChange)
+                badges.Add(OptimizerUI.Badge("Unsaved", "accent"));
+            if (!entry.UsesSourceFile)
+                badges.Add(OptimizerUI.Badge("Decoded import", "warn", ExportedTooltip(entry)));
+            if (ExclusionQueue.IsQueued(entry.AssetPath))
+                badges.Add(OptimizerUI.Badge("Excluding", "warn", "Waiting in the Luna Exclusions window (Pending)."));
+            details.Add(OptimizerUI.DetailsHeader(entry.FileName, entry.AssetPath, badges));
+            if (entry.HasPrediction)
+                details.Add(OptimizerUI.Metric(FormatBytes(entry.PlayableBytes), "in playable",
+                    entry.HasPendingChange && entry.PendingFromBytes >= 0 ? OptimizerUI.Delta(entry.PlayableBytes - entry.PendingFromBytes) + " unsaved" : null,
+                    entry.PlayableBytes <= entry.PendingFromBytes));
 
-            details.Add(OptimizerUI.SectionTitle("Listen"));
-            details.Add(WaveRow("Source", Path.GetFullPath(entry.AssetPath), SOURCE_WAVE, () => PlaySource(entry), null));
+            details.Add(OptimizerUI.SectionTitle("Listen & trim"));
+            var sourceRow = WaveRow("Source", Path.GetFullPath(entry.AssetPath), SOURCE_WAVE, () => PlaySource(entry), null);
+            details.Add(sourceRow);
+            if (entry.Format != SoundFormat.Custom)
+                details.Add(TrimEditor(entry, sourceRow[1]));
             var lunaPath = CanPredict ? LunaSoundPipeline.PreviewPathFor(entry, projectRoot, install) : null;
             details.Add(WaveRow("Luna", lunaPath != null && File.Exists(lunaPath) ? lunaPath : null, LUNA_WAVE,
                 () => EditorApplication.delayCall += () => PlayLuna(entry),
@@ -898,21 +1324,17 @@ namespace Supercent.LunaTextureOptimizer.Editor
             }
 
             details.Add(OptimizerUI.SectionTitle("Size"));
-            details.Add(OptimizerUI.InfoRow("Source", entry.Extension.TrimStart('.') + " · " + FormatBytes(entry.FileBytes) + " · " + entry.LengthSeconds.ToString("0.0") + " s"));
-            var exported = OptimizerUI.InfoRow("Exported", ExportedText(entry));
+            details.Add(OptimizerUI.InfoRow("Source", entry.Extension.TrimStart('.') + " · " + FormatBytes(entry.FileBytes) + " · " + entry.LengthSeconds.ToString("0.00") + " s"));
+            var exported = OptimizerUI.InfoRow("Luna input", ExportedText(entry));
             exported.tooltip = ExportedTooltip(entry);
             exported.EnableInClassList("lo-warning", !entry.UsesSourceFile);
             details.Add(exported);
-            if (entry.HasTrim)
-                details.Add(OptimizerUI.InfoRow("Trim", entry.LunaRule.startTime + "–" + entry.LunaRule.endTime));
             var prediction = entry.Prediction;
             if (prediction != null && prediction.success)
             {
                 details.Add(OptimizerUI.InfoRow("Luna output", (prediction.outputExtension ?? ".mp3").TrimStart('.') + " · " + FormatBytes(prediction.outputBytes) + " file"));
-                var playable = OptimizerUI.InfoRow("In playable", FormatBytes(entry.PlayableBytes)
-                    + (entry.HasPendingChange && entry.PendingFromBytes >= 0 ? "   (was " + FormatBytes(entry.PendingFromBytes) + ", unsaved)" : string.Empty));
-                playable.EnableInClassList("lo-pending-cell", entry.HasPendingChange);
-                details.Add(playable);
+                if (entry.HasPendingChange && entry.PendingFromBytes >= 0)
+                    details.Add(OptimizerUI.InfoRow("Saved setting", FormatBytes(entry.PendingFromBytes) + " in playable"));
             }
             else
             {
@@ -923,9 +1345,110 @@ namespace Supercent.LunaTextureOptimizer.Editor
             details.Add(OptimizerUI.SectionTitle("Used by"));
             details.Add(UsedBy(entry.AssetPath));
 
-            var exclude = new Button(() => LunaExclusionWindow.AddAndShow(new[] { entry.AssetPath })) { text = "Add to Luna Exclusions…", tooltip = "Review it in the Luna Exclusions window before anything is written." };
+            var actions = new VisualElement();
+            actions.AddToClassList("lo-details-actions");
+            var ping = new Button(() => OptimizerUI.Ping(entry.AssetPath)) { text = "Show in Project" };
+            ping.AddToClassList("lo-details-button");
+            actions.Add(ping);
+            var exclude = new Button(() => LunaExclusionWindow.AddAndShow(new[] { entry.AssetPath })) { text = "Exclude from build…", tooltip = "Review it in the Luna Exclusions window before anything is written." };
             exclude.AddToClassList("lo-details-button");
-            details.Add(exclude);
+            actions.Add(exclude);
+            details.Add(actions);
+        }
+
+        // Range slider over the source waveform (the parts left out are shaded), exact start / end fields, and
+        // shortcuts. Predicted once the handles rest and the drag ended; nothing is written until Save all.
+        VisualElement TrimEditor(SoundEntry entry, VisualElement wave)
+        {
+            var length = entry.LengthSeconds;
+            var box = new VisualElement();
+            box.AddToClassList("lo-trim-editor");
+            var leftShade = TrimShade(true);
+            var rightShade = TrimShade(false);
+            wave.Add(leftShade);
+            wave.Add(rightShade);
+
+            var slider = new MinMaxSlider(SoundTrim.Start(entry), SoundTrim.End(entry), 0f, length);
+            slider.AddToClassList("lo-trim-slider");
+            box.Add(slider);
+            var fields = new VisualElement();
+            fields.AddToClassList("lo-row");
+            var start = new FloatField("Start") { isDelayed = true, formatString = "0.00", value = SoundTrim.Start(entry) };
+            var end = new FloatField("End") { isDelayed = true, formatString = "0.00", value = SoundTrim.End(entry) };
+            start.AddToClassList("lo-trim-detail-field");
+            end.AddToClassList("lo-trim-detail-field");
+            var kept = OptimizerUI.SmallLabel(string.Empty);
+            kept.AddToClassList("lo-trim-kept");
+            fields.Add(start);
+            fields.Add(end);
+            fields.Add(kept);
+            box.Add(fields);
+
+            Action<Vector2> show = range =>
+            {
+                leftShade.style.width = Length.Percent(length > 0f ? range.x / length * 100f : 0f);
+                rightShade.style.width = Length.Percent(length > 0f ? (length - range.y) / length * 100f : 0f);
+                start.SetValueWithoutNotify(range.x);
+                end.SetValueWithoutNotify(range.y);
+                kept.text = "keeps " + (range.y - range.x).ToString("0.00") + " of " + length.ToString("0.00") + " s";
+            };
+            show(slider.value);
+            slider.RegisterValueChangedCallback(change =>
+            {
+                var range = change.newValue;
+                show(range);
+                if (trimCommit != null)
+                    trimCommit.Pause();
+                trimCommit = slider.schedule.Execute(() => CommitTrim(slider, entry, range));
+                trimCommit.ExecuteLater(TRIM_COMMIT_DELAY_MS);
+            });
+            start.RegisterValueChangedCallback(change =>
+            {
+                var value = change.newValue;
+                EditorApplication.delayCall += () => SetTrim(entry, value, SoundTrim.End(entry));
+            });
+            end.RegisterValueChangedCallback(change =>
+            {
+                var value = change.newValue;
+                EditorApplication.delayCall += () => SetTrim(entry, SoundTrim.Start(entry), value);
+            });
+
+            var buttons = new VisualElement();
+            buttons.AddToClassList("lo-row");
+            var silence = new Button(() => EditorApplication.delayCall += () => ShowTrimResult(TrimSilence(new List<SoundEntry> { entry })))
+            {
+                text = "Trim silence",
+                tooltip = "Leave out leading and trailing silence (below about -50 dB, with 30 ms kept around the sound).",
+            };
+            silence.AddToClassList("lo-small-button");
+            buttons.Add(silence);
+            var whole = new Button(() => EditorApplication.delayCall += () => SetTrim(entry, 0f, length)) { text = "Keep whole clip" };
+            whole.AddToClassList("lo-small-button");
+            whole.SetEnabled(entry.HasTrim);
+            buttons.Add(whole);
+            box.Add(buttons);
+            return box;
+        }
+
+        static VisualElement TrimShade(bool left)
+        {
+            var shade = new VisualElement { pickingMode = PickingMode.Ignore };
+            shade.AddToClassList("lo-trim-shade");
+            shade.AddToClassList(left ? "lo-trim-shade--left" : "lo-trim-shade--right");
+            return shade;
+        }
+
+        void CommitTrim(MinMaxSlider slider, SoundEntry entry, Vector2 range)
+        {
+            // Still dragging: try again shortly (re-predicting rebuilds this panel and would end the drag).
+            if (slider.panel != null && slider.panel.GetCapturingElement(PointerId.mousePointerId) != null)
+            {
+                trimCommit = slider.schedule.Execute(() => CommitTrim(slider, entry, range));
+                trimCommit.ExecuteLater(TRIM_COMMIT_DELAY_MS);
+                return;
+            }
+            if (Mathf.Abs(range.x - SoundTrim.Start(entry)) > 0.0005f || Mathf.Abs(range.y - SoundTrim.End(entry)) > 0.0005f)
+                SetTrim(entry, range.x, range.y);
         }
 
         // Label, play button and waveform image of a file Unity can decode (or a hint when there is none yet).
@@ -1089,12 +1612,10 @@ namespace Supercent.LunaTextureOptimizer.Editor
             switch (column)
             {
                 case Column.Source: return (a, b) => a.FileBytes.CompareTo(b.FileBytes);
-                case Column.Length: return (a, b) => a.LengthSeconds.CompareTo(b.LengthSeconds);
-                case Column.SourceChannels: return (a, b) => a.Channels.CompareTo(b.Channels);
                 case Column.Format: return (a, b) => a.Format.CompareTo(b.Format);
                 case Column.Bitrate: return (a, b) => a.LunaRule.bitrate.CompareTo(b.LunaRule.bitrate);
                 case Column.Channels: return (a, b) => a.LunaRule.channels.CompareTo(b.LunaRule.channels);
-                case Column.Trim: return (a, b) => a.HasTrim.CompareTo(b.HasTrim);
+                case Column.Trim: return (a, b) => SoundTrim.Kept(a).CompareTo(SoundTrim.Kept(b));
                 case Column.Predicted: return (a, b) => a.PlayableBytes.CompareTo(b.PlayableBytes);
                 case Column.LastBuild: return (a, b) => a.LastBuildBytes.CompareTo(b.LastBuildBytes);
                 default: return (a, b) => string.Compare(a.FileName, b.FileName, StringComparison.OrdinalIgnoreCase);

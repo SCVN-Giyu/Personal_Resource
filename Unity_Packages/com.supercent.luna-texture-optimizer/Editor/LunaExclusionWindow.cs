@@ -154,30 +154,49 @@ namespace Supercent.LunaTextureOptimizer.Editor
         {
             if (pendingResult == null)
                 return;
+            string error;
+            var count = ApplyPending(pendingResult, projectRoot, out error);
+            if (error != null)
+            {
+                EditorUtility.DisplayDialog("Apply to Luna", "Nothing was changed.\n\n" + error, "OK");
+                return;
+            }
+            if (count == 0)
+                return;
+            AfterLunaChange();
+            ShowNotification(new GUIContent(count + " exclusion(s) saved. Sizes update after the next Luna build."));
+        }
+
+        // Writes the pending items that Luna ships (one undoable save) and takes them off the list. Returns how many.
+        public static int ApplyPending(BlastRadius result, string projectRoot, out string error)
+        {
+            error = null;
             var entries = new List<string>();
             var applied = new List<string>();
             foreach (var item in ExclusionQueue.Paths)
             {
                 var isFolder = AssetDatabase.IsValidFolder(item);
                 var prefix = item + "/";
-                if (!pendingResult.Targets.Any(t => t.AssetPath == item || (isFolder && t.AssetPath.StartsWith(prefix, StringComparison.Ordinal))))
+                if (!result.Targets.Any(t => t.AssetPath == item || (isFolder && t.AssetPath.StartsWith(prefix, StringComparison.Ordinal))))
                     continue;
                 entries.Add(isFolder ? prefix : item);
                 applied.Add(item);
             }
             if (entries.Count == 0)
-                return;
-            string error;
+                return 0;
             var label = "Exclude: " + LunaSaveHistory.Names(applied.Select(p => Path.GetFileName(p) + (AssetDatabase.IsValidFolder(p) ? "/" : string.Empty)));
             if (!LunaSettingsWriter.SaveAssetExcludes(entries, new List<string>(), label, projectRoot, out error))
-            {
-                EditorUtility.DisplayDialog("Apply to Luna", "Nothing was changed.\n\n" + error, "OK");
-                return;
-            }
+                return 0;
             foreach (var item in applied)
                 ExclusionQueue.Remove(item);
-            AfterLunaChange();
-            ShowNotification(new GUIContent(entries.Count + " exclusion(s) saved. Sizes update after the next Luna build."));
+            return entries.Count;
+        }
+
+        // Refreshes an open Exclusions window after a change made elsewhere (the browser page).
+        public static void ReloadOpen()
+        {
+            foreach (var window in Resources.FindObjectsOfTypeAll<LunaExclusionWindow>())
+                window.Reload();
         }
 
         // ---------------------------------------------------------------- excluded

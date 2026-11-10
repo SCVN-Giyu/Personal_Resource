@@ -60,7 +60,7 @@ namespace Supercent.LunaTextureOptimizer.Editor
             });
         }
 
-        // Writes bitrate, channels, script and ext (the format) from each entry's LunaRule. Entries without their own override get one,
+        // Writes bitrate, channels, script, ext (the format) and trim from each entry's LunaRule. Entries without their own override get one,
         // copied from the rule that matches them today so only the edited values change.
         public static bool SaveSoundRules(IList<SoundEntry> entries, string projectRoot, out string error)
         {
@@ -85,8 +85,19 @@ namespace Supercent.LunaTextureOptimizer.Editor
                     overrideType.GetField("channels").SetValue(target, entry.LunaRule.channels);
                     overrideType.GetField("script").SetValue(target, entry.LunaRule.script ?? string.Empty);
                     overrideType.GetField("ext").SetValue(target, entry.LunaRule.ext ?? string.Empty);
+                    SetConverted(overrideType, target, "startTime", entry.LunaRule.startTime ?? LunaSoundPipeline.NO_TIME);
+                    SetConverted(overrideType, target, "endTime", entry.LunaRule.endTime ?? LunaSoundPipeline.NO_TIME);
+                    SetConverted(overrideType, target, "lengthInSeconds", entry.LunaRule.lengthInSeconds);
                 }
             });
+        }
+
+        // Luna's override fields by name, converted to the field's own type (a missing field is left alone).
+        static void SetConverted(Type type, object target, string name, object value)
+        {
+            var field = type.GetField(name);
+            if (field != null)
+                field.SetValue(target, Convert.ChangeType(value, field.FieldType, System.Globalization.CultureInfo.InvariantCulture));
         }
 
         // Stale overrides name files that no longer exist. moves: old name -> asset path the override should follow;

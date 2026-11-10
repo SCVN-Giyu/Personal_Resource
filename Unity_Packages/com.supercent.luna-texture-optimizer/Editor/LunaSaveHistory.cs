@@ -123,6 +123,49 @@ namespace Supercent.LunaTextureOptimizer.Editor
             menu.DropDown(buttonRect);
         }
 
+        // For the browser page: what reverting records[index] of a section does (null when it cannot be read), and the revert itself.
+        public static string RevertMessage(LunaSettingsSection section, int index, string projectRoot, out string error)
+        {
+            var records = For(section, projectRoot);
+            error = null;
+            if (index < 0 || index >= records.Count)
+            {
+                error = "That save is no longer in the history.";
+                return null;
+            }
+            return RevertMessage(records, index, projectRoot, out error);
+        }
+
+        public static bool Revert(LunaSettingsSection section, int index, string projectRoot, out string error)
+        {
+            var records = For(section, projectRoot);
+            if (index < 0 || index >= records.Count)
+            {
+                error = "That save is no longer in the history.";
+                return false;
+            }
+            var record = records[index];
+            var label = "Undo of " + record.SavedAt.ToString("HH:mm:ss") + " " + record.label;
+            return LunaSettingsWriter.RestoreSection(record.section, record.before, label, projectRoot, out error);
+        }
+
+        static string RevertMessage(List<Record> records, int index, string projectRoot, out string error)
+        {
+            var record = records[index];
+            var message = "Put Luna's " + SectionName(record.section) + " back to how they were before this save?\n\n"
+                + record.SavedAt.ToString("yyyy-MM-dd HH:mm:ss") + "  " + record.label
+                + (string.IsNullOrEmpty(record.detail) ? string.Empty : "\n" + record.detail);
+            if (index > 0)
+                message += "\n\nThis also undoes the " + index + " later save(s) in this list.";
+            string current;
+            if (!LunaSettingsWriter.TryReadSection(record.section, projectRoot, out current, out error))
+                return null;
+            if (!LunaSettingsWriter.SameSection(record.section, current, records[0].after))
+                message += "\n\n⚠ The " + SectionName(record.section) + " changed after the newest save in this list (Luna window or another tool). "
+                    + "Undoing also discards those changes.";
+            return message + "\n\nOther Luna settings are not touched. The undo is recorded, so it can be undone too.";
+        }
+
         static void ConfirmRevert(List<Record> records, int index, string projectRoot, Action reverted)
         {
             var record = records[index];
