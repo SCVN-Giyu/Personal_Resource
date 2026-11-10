@@ -1,86 +1,106 @@
 ---
 name: visual-compiler
 description: >-
-  Visualizes any algorithm, physics solver, rendering pass, or codebase feature as an interactive,
-  step-by-step Pipeline Call-Chain and Micro-Scale Object/Memory Visualizer. Use when the user wants
-  to learn, inspect, or understand how code/math transforms data and objects visually step-by-step
-  ("visualize this", "visual compiler", "show me how the data/object transforms") without reading
-  scattered files or writing boilerplate code.
+  Visualizes any algorithm, physics solver, rendering pass, or codebase feature as an interactive
+  visual HTML/Canvas app. Supports two modes: (1) Guided Lesson Mode ("teach me X") — builds
+  intuition one chapter at a time with 1-dot/1-stick micro-scenes, an always-visible loop strip,
+  Happy Path → Predict → Break → Explain flow, and misconception quizzes; and (2) Lab Mode
+  ("inspect/debug this code") — a pipeline stepper with ghost deltas, struct-diff tables, and
+  verified sabotage toggles.
 ---
 
-# Visual Compiler Skill (Micro-Scale Pipeline & Object State Visualizer)
+# Visual Compiler Skill (Guided Lesson & Pipeline Lab)
 
-Turn static code, scattered files, and abstract math into a **live, interactive visual stepper** where the user can scrub through each stage of a data pipeline and watch **how the object looks, moves, or mutates in memory at micro-scale ($N \le 4$)**—plus toggle "Sabotage / Naive Modes" to visually witness why every guard and formula exists.
-
-Grounded in the 4-Layer Mental Model (`State/Memory Layout` → `Transformation Pipeline` → `Signature Invariants` → `Fracture Points`).
-
----
-
-## 1. Core Principles (Why & How This Works)
-
-1. **Pipeline Call-Chain, Never File Hierarchy:**
-   - Do not organize explanations by `.cs` files, classes, or OOP wrappers.
-   - Flatten the entire execution path into a single chronological **Pipeline of Data Transformations** (`Pass 1` → `Pass 2` → `Pass 3` → `Pass 4`).
-   - Collapse `for`-loop boilerplate; step by **meaningful state transitions**, not `i++` scalar noise.
-2. **Micro-Scale Toy Instance ($N = 2 \text{ to } 4$):**
-   - Human eyes cannot track 1,000 particles or 500 matrix transforms at once.
-   - Always reduce the system to the **smallest non-trivial visual case** (e.g., 3 particles & 2 constraints; 1 ray & 2 AABBs; 4 instances in a GPU buffer; 1 projectile & 2 chain-reaction blocks).
-3. **Ghost Delta ($\Delta$) Rendering (Before vs. After on Every Step):**
-   - Never just draw the final state. When stepping into `Pass K`, draw the **previous step's state as a faded/dashed ghost** alongside the **new mutated state and the vector/arrow ($\Delta$) that caused it**.
-4. **Synchronized 3-Pane Mental Model:**
-   - **Pane A (The Spatial / Object Viewport):** 2D/3D Canvas showing where the object is, its transform, vectors, bounds, or visual state.
-   - **Pane B (The Active Pipeline Stage & Code Slice):** The exact 3–8 lines of actual data-mutating code/math running in the current step (with live numbers substituted right next to the variables).
-   - **Pane C (The Memory / Struct Diff Table):** Raw fields at rest (`pos`, `vel`, `invMass`, `flags`, byte stride/index), highlighting in color only the exact fields that mutated in this step.
-5. **Ownership via Visual Sabotage ("Break It" Toggles):**
-   - Passive watching creates an illusion of competence. To make the user *own* the algorithm without writing code, include **2–3 Sabotage / A-B Toggles** that let the user disable a guard or switch to a naive formula and **watch the object geometrically explode, tunnel, or desync**.
+Turn abstract algorithms, physics solvers, rendering passes, and codebase mechanics into **self-contained, interactive visual HTML/Canvas pages** that build deep engineering intuition—without reading walls of text or writing boilerplate code.
 
 ---
 
-## 2. Deliverable Format (Interactive Visual Lab)
+## Step 0: The Mode Gate (Ask or Route First)
 
-When invoked, produce a **self-contained, zero-dependency interactive visualizer** (plus a concise 4-Layer Mental Model summary):
+Before building anything, distinguish **learning a concept** from **auditing existing code**:
 
-- **If in an environment supporting live React Canvas (`.canvas.tsx`):** Render an interactive React Canvas app.
-- **If in standard IDE / CLI / Browser environment:** Write a single, self-contained HTML5 + Canvas/SVG file (e.g. in `<project_or_scratch>/visual_labs/<topic>_visual_compiler.html`) and open or link it so the user can scrub through it immediately in any browser with zero build step.
+1. **Guided Lesson Mode (Default for `"teach / learn / explain / I don't get X"` or when no code is provided):**
+   - A learner who doesn't yet have a mental model will be overwhelmed by a 3-pane dashboard full of struct tables and 4 simultaneous sabotage toggles.
+   - Build a **4–7 Chapter Guided Lesson** that reveals **one idea at a time**, starts with the smallest possible case ($N = 1\text{ or }2$), and teaches via **Happy Path → Predict → Break → Explain**.
+   - **Reference Template:** Always inspect [`examples/xpbd_cloth_guided.html`](examples/xpbd_cloth_guided.html) as the gold-standard layout and interaction model.
 
-### Required Interactive Controls in the Visual Lab
+2. **Pipeline Lab Mode (For `"inspect / debug / visualize this code"` when a file/snippet is given, or as the final chapter of a Lesson):**
+   - For a user who already knows the concept and wants to trace data transformations, struct mutations, and edge-case fractures across a pipeline.
 
-1. **Pipeline Stage Scrubber (`[ < Prev Step ]` / `[ Next Step > ]` + Timeline Bar):**
-   - Steps through each transformation stage within a single frame/tick, plus a `[ Step Full Frame ]` or `[ Play / Pause ]` button to see multi-frame accumulation.
-2. **Micro-State Preset Selector:**
-   - 2–3 presets (e.g., `Normal Case`, `Boundary / Edge Case`, `Collision / High-Stress Case`).
-3. **Sabotage / Naive Mode Toggles (The "Pain & Fracture" Switches):**
-   - Interactive switches that mutate the active pipeline logic live:
-     - *Example (Physics/XPBD):* `[x] Derive Velocity from (x - prevX)/dt` vs `[ ] Naive Euler Velocity (Watch Energy Explode)`
-     - *Example (GPU/Culling):* `[x] Pad Struct to 16B Alignment` vs `[ ] Unaligned 12B Stride (Watch Buffer Drift)`
-     - *Example (Gameplay/State):* `[x] Latch Win on <= 0` vs `[ ] Check == 0 with Simultaneous Hit (Watch Softlock)`
-     - *Example (DeltaTime):* Slider for `dt` (`0.016s` normal vs `0.250s` lag spike).
-4. **Live Variable Substitution:**
-   - Inside the code box for the current step, show both the symbolic line and the live evaluated numbers for the selected object:
-     ```text
-     // Symbolic:
-     Vector2 corr = grad * (-C / (wA + wB + alpha));
-     // Live (Particle B):
-     corr = (0.0, 1.0) * (-0.35 / (1.0 + 1.0 + 0.01)) = (0.0, -0.174)
-     ```
+*If the user's intent is ambiguous, default to **Guided Lesson Mode** (and optionally include a sandbox/lab in the final chapter).*
 
 ---
 
-## 3. Execution Workflow
+## Mode A: Guided Lesson Mode (How Understanding Builds Up)
 
-### Step 1: Extract the 4-Layer Mental Model
-Before generating the visual lab, map the target code or concept into 4 compact blocks (no filler stories):
-1. **State (Memory Layout):** What structs/arrays exist and what each field physically represents.
-2. **Transformation Pipeline:** The 3–6 discrete passes that mutate State A into State B.
-3. **Signature Invariants (2–3 Checkpoints):** What must hold true after each pass (and how the visualizer draws it).
-4. **Fracture Points (2–3 Sabotage Toggles):** Which exact guards or formulas will be wired to the "Break It" buttons.
+### 1. Reveal One Idea at a Time (4–7 Chapters)
+- Organize by **how human understanding builds up**, not by raw file structure.
+- **Strict Screen Budget per Chapter:**
+  - **1 always-visible Loop Strip** at the top (e.g. `① Predict → ② Fix the sticks → ③ Velocity ↻`) highlighting the step the current chapter teaches so the learner always sees how the pieces fit.
+  - **≤ 4 sentences of plain-English text** at the top. Define every new symbol (`C`, `w`, `α`, `λ`, Gauss–Seidel) the first time it appears in plain English. If a symbol isn't needed in Chapter $K$, leave it out!
+  - **1 focused 2D/3D Canvas scene** with **≤ 3 controls** (buttons/sliders) and direct pointer dragging where helpful.
+  - **1 live formula box** (`formula` + live substituted numbers in green/red).
+- **Start Smaller Than $N = 2\text{–}4$:**
+  - Chapter 1–5: Use the **smallest case that carries meaning** (e.g., 1 pinned dot + 1 free dot + 1 stick).
+  - Final Chapter: Scale up to the full system (e.g., a 9×7 interactive cloth or full buffer) showing that the exact same 3-step loop runs across all items.
 
-### Step 2: Build the Interactive Visual Compiler Lab
-Generate the self-contained HTML/Canvas (or `.canvas.tsx`) file implementing:
-- High-contrast dark UI with clear geometric drawings (vectors with arrowheads, dashed ghost previous states, color-coded forces/deltas, coordinate grid).
-- The synchronized Pipeline Stepper, Code Slice with live number substitution, Struct Diff Table (highlighting changed cells), and Sabotage Toggles.
+### 2. Order Every Chapter: Happy Path → Predict → Break → Explain
+Breaking things is the strongest way to learn *why* each line of code exists—**but a failure is just noise until the learner knows what "correct" looks like.**
+Walk this exact 4-step sequence inside each chapter:
+1. **Happy Path First:** Let the learner click/drag the working step and see the ghost delta ($\Delta$) and target invariant (e.g., the dashed circle where $C = 0$).
+2. **Predict Before Breaking:** Ask the learner what will happen if a specific line, guard, or term is removed/changed.
+3. **Break It on Purpose (Sabotage Toggle):** Give a clear toggle button right on the chapter controls (e.g., `Correct v` vs `Naive v (skip step ③)`, or `/ h² ON (XPBD)` vs `/ h² OFF (old PBD)`, or `Pin w = 0` vs `Bug: Pin w = 1`, or `Guard |d| < 1e-9` off).
+4. **Explain the Mechanism:** Show on the HUD and formula box *why* the break failed geometrically or numerically.
 
-### Step 3: Present & Guide the Eye
-Provide the clickable link to the generated Visual Lab and give a **3-bullet "Eye Guide"**:
-- What to watch on **Step 1 → Step N** in normal mode.
-- Which **Sabotage Toggle** to flip first and what geometric/data failure to watch for in the viewport.
+Choose breaks from these three high-value categories:
+- **Plausible Misconceptions:** e.g., *"The velocity from Predict is already good enough; why recompute `v = (x - prev) / h`?"*
+- **Real Production Bugs:** e.g., `NaN` from zero-length vector division (`|d| == 0`), a pinned particle with `w != 0`, or a `dt` lag spike.
+- **Tuning Traps:** e.g., stiffness/compliance that changes when frame rate (`h = 1/30` vs `1/240`) or iteration count changes.
+
+### 3. Mandatory Comprehension & Misconception Quizzes (2–3 per Chapter)
+- Place a `🧠 Check yourself (guess before you click)` card at the bottom of every chapter with **2–3 multiple-choice questions**:
+  - At least **1 prediction question** asked *before* clicking the action/break button.
+  - At least **1 transfer question** (e.g., *"Your cloth looks too stretchy in a game—what do you change?"*).
+- **Treat Wrong Answers as Learning Material:**
+  - Every wrong option must represent a **tempting misconception**.
+  - Clicking an option must immediately reveal an explanation of **why the wrong idea is tempting AND why it fails**.
+
+---
+
+## Mode B: Pipeline Lab Mode (For Code Inspection & Deep Debugging)
+
+When the user already understands the concept or asks to inspect a specific code snippet/system:
+1. **Pipeline Call-Chain Scrubber:** Step through discrete passes (`Pass 1 → Pass 2 → Pass 3`) with ghost delta ($\Delta$) rendering and live variable substitution.
+2. **Tidy Layout (Collapse Secondary Panels by Default):**
+   - Keep the Spatial Viewport and Active Code Slice primary.
+   - Collapse the **4-Layer Mental Model reference** and **Struct-Diff Table** by default, or only display struct rows that actually mutated on the current step.
+3. **Verified Sabotage Toggles & Presets:** Wire the system's real fracture points into interactive toggles.
+
+---
+
+## Hard Requirement: Headless Verification Before Presenting
+
+**Never invent or guess what a bug/break looks like.** (For example, in PBD, skipping the velocity update does *not* make the pendulum bounce higher—the stick still clamps the position to the circle while `|v|` silently accumulates gravity forever (`~98 m/s` after 10s) until the solver can't keep up; and a coincident-particle `NaN` preset won't trigger `NaN` if an earlier constraint separates the particles first!).
+
+Before presenting the HTML file to the user, you **MUST**:
+1. **Keep Simulation Logic Pure & Free of DOM Calls:** Write the step/solver functions so they can be executed headlessly in Node.js (`node -e ...`) or Python.
+2. **Run Every Chapter, Preset, and Sabotage Toggle Headlessly:**
+   - Verify that the numbers, HUD readouts, and failure modes described in the text **actually happen** when clicked (e.g., confirm that XPBD stretch stays constant across `h = 1/30`, `1/60`, `1/240` with `/h² ON` and changes with `/h² OFF`; confirm that a `NaN` sabotage toggle actually produces `NaN`).
+3. **Declare Visual Exaggerations on Screen:**
+   - Whenever a time step (`h = 0.15s`), force vector, or compliance value is exaggerated for visual clarity, state that explicitly on screen alongside the true scale.
+
+---
+
+## Deliverable & Housekeeping Rules
+
+1. **Persistent Output Folder (Never Lose Lessons in `/tmp`):**
+   - If a project repository is open and relevant, save to `<PROJECT_ROOT>/Docs/Visual_Labs/<topic>.html`.
+   - If no project is open (or for general learning), save to your persistent learning vault:
+     `/Users/giyu/Documents/Personal_resources/_Obsidian/_Learning_Resource/Visual_Labs/<topic>.html`
+     *(or relative to the repo root: `<PERSONAL_RESOURCES_ROOT>/_Obsidian/_Learning_Resource/Visual_Labs/<topic>.html`)*.
+2. **Keep the Guidance Inside the Page (Zero Chat Walls of Text):**
+   - Put all explanations, formulas, quizzes, and eye-guides **inside the interactive HTML page itself**.
+   - Your chat response must be **concise**:
+     1. The clickable link to the `.html` file (and open it in the browser if authorized/appropriate).
+     2. How to start (1–2 sentences).
+     3. A brief bullet list of what simulation claims & sabotage breaks were headlessly verified.

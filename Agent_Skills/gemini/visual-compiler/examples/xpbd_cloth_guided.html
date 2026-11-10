@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XPBD Cloth Lesson</title>
+<style>
+:root{
+  --bg:#0c1017;--card:#131a26;--line:#243047;--text:#e8ebf2;--mute:#94a0b8;
+  --acc:#5ad1ff;--yel:#ffd166;--grn:#6ee7a0;--red:#ff6b7a;--org:#ff9f43;--blu:#5b9dff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:18px 16px 60px}
+.loop{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:14px;font-size:13px}
+.loop span.box{padding:5px 10px;border-radius:7px;border:1px solid var(--line);color:var(--mute)}
+.loop span.box.on{border-color:var(--yel);color:var(--yel);background:#2a2410}
+.loop .arr{color:var(--mute)}
+.prog{display:flex;gap:6px;justify-content:center;margin-bottom:14px}
+.prog i{width:28px;height:5px;border-radius:3px;background:var(--line)}
+.prog i.on{background:var(--acc)} .prog i.done{background:#2f6d8a}
+h1{font-size:22px;margin:0 0 4px}
+.kicker{color:var(--acc);font-size:13px;letter-spacing:.06em;text-transform:uppercase}
+.body p{margin:8px 0}
+.body b{color:#fff}
+canvas{width:100%;height:360px;display:block;background:#0a0e15;border:1px solid var(--line);border-radius:10px;margin:12px 0 8px;touch-action:none}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{background:#1b2536;color:var(--text);border:1px solid #2e3c57;border-radius:8px;padding:8px 14px;font:inherit;font-size:14px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.main{background:#16405a;border-color:#2b78a4}
+button.sel{border-color:var(--yel);color:var(--yel)}
+label.rng{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mute)}
+label.rng b{color:var(--text);min-width:60px;font-variant-numeric:tabular-nums}
+input[type=range]{accent-color:var(--acc);width:160px}
+.formula{background:#0b1220;border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:8px;padding:10px 12px;margin:12px 0;font:14px/1.7 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.formula .live{color:var(--grn)}
+.quiz{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}
+.quiz h3{margin:0 0 6px;font-size:14px;color:var(--yel);letter-spacing:.05em;text-transform:uppercase}
+.q{margin:10px 0 14px}
+.q p{margin:0 0 8px}
+.opts{display:flex;flex-direction:column;gap:6px}
+.opts button{text-align:left}
+.opts button.right{border-color:var(--grn);color:var(--grn);background:#10261b}
+.opts button.wrong{border-color:var(--red);color:var(--red);background:#2a1216}
+.why{display:none;margin-top:8px;padding:8px 10px;border-radius:8px;background:#0f1a14;color:#cfeedd;font-size:14.5px}
+.why.show{display:block}
+.nav{display:flex;justify-content:space-between;margin-top:20px}
+.hint{color:var(--mute);font-size:13.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="loop" id="loop">
+    <span class="box" data-s="1">① Predict</span><span class="arr">→</span>
+    <span class="box" data-s="2">② Fix the sticks</span><span class="arr">→</span>
+    <span class="box" data-s="3">③ Velocity</span><span class="arr">↻ repeat every substep</span>
+  </div>
+  <div class="prog" id="prog"></div>
+  <div class="kicker" id="kicker"></div>
+  <h1 id="title"></h1>
+  <div class="body" id="body"></div>
+  <canvas id="cv"></canvas>
+  <div class="controls" id="controls"></div>
+  <div class="formula" id="formula"></div>
+  <div class="quiz" id="quiz"></div>
+  <div class="nav"><button id="back">← Back</button><button id="fwd" class="main">Next chapter →</button></div>
+</div>
+
+<script>
+const g = -9.81;
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let W = 0, H = 0, view = {s:150, ox:0, oy:60};
+const n3 = v => (Math.abs(v) < 0.0005 ? 0 : v).toFixed(3);
+const sub = (a,b) => [a[0]-b[0], a[1]-b[1]];
+const len = v => Math.hypot(v[0], v[1]);
+
+function resize(){
+  const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  cv.width = r.width*d; cv.height = r.height*d; ctx.setTransform(d,0,0,d,0,0); W = r.width; H = r.height;
+}
+const S = p => [view.ox + p[0]*view.s, view.oy - p[1]*view.s];
+const toW = (x,y) => [(x - view.ox)/view.s, (view.oy - y)/view.s];
+
+// ---------- drawing helpers ----------
+function clear(){ ctx.clearRect(0,0,W,H); }
+function text(t, p, color='#94a0b8', dx=12, dy=-10, size=13){ const q = S(p); ctx.fillStyle = color; ctx.font = `${size}px ui-sans-serif,system-ui`; ctx.fillText(t, q[0]+dx, q[1]+dy); }
+function ring(c, r, color='rgba(90,209,255,.35)'){ const q = S(c); ctx.setLineDash([4,6]); ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(q[0], q[1], r*view.s, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+function stick(a, b, L0, width=4){
+  const C = len(sub(a,b)) - L0, r = C / L0;
+  ctx.strokeStyle = Math.abs(r) < 0.01 ? '#a7b1c6' : r > 0 ? '#ff9f43' : '#5b9dff';
+  ctx.lineWidth = width; ctx.beginPath(); ctx.moveTo(...S(a)); ctx.lineTo(...S(b)); ctx.stroke();
+}
+function dot(p, pinned, label, color='#e8ebf2'){
+  const q = S(p);
+  if (pinned){ ctx.fillStyle = '#c3cbdb'; ctx.fillRect(q[0]-9, q[1]-9, 18, 18); ctx.fillStyle = '#5c667c'; ctx.fillRect(q[0]-16, q[1]-12, 32, 3); }
+  else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(q[0], q[1], 10, 0, 7); ctx.fill(); }
+  if (label) text(label, p, '#e8ebf2', 14, 5, 14);
+}
+function ghost(p){ const q = S(p); ctx.setLineDash([3,4]); ctx.strokeStyle = 'rgba(200,210,230,.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(q[0], q[1], 10, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+function arrow(p, v, color, label, scale=1){
+  const a = S(p), b = [a[0] + v[0]*view.s*scale, a[1] - v[1]*view.s*scale], d = [b[0]-a[0], b[1]-a[1]], L = Math.hypot(...d);
+  if (L < 2) return;
+  const u = [d[0]/L, d[1]/L], h = 9;
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(b[0]-u[0]*h*.7, b[1]-u[1]*h*.7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(...b); ctx.lineTo(b[0]-u[0]*h-u[1]*h*.5, b[1]-u[1]*h+u[0]*h*.5); ctx.lineTo(b[0]-u[0]*h+u[1]*h*.5, b[1]-u[1]*h-u[0]*h*.5); ctx.fill();
+  if (label){ ctx.font = '13px ui-sans-serif,system-ui'; ctx.fillText(label, b[0]+8, b[1]+4); }
+}
+function hud(lines){ ctx.font = '14px ui-monospace,Menlo,monospace'; lines.forEach((l,i) => { ctx.fillStyle = l[1] || '#94a0b8'; ctx.fillText(l[0], 12, 22 + i*20); }); }
+
+// ---------- one pendulum step (used by chapters 4 & 5) ----------
+function pendulumSubstep(s, h, opt){
+  // ① predict
+  s.prev = [...s.B]; s.v = [s.v[0], s.v[1] + g*h]; s.B = [s.B[0] + s.v[0]*h, s.B[1] + s.v[1]*h];
+  // ② fix (A pinned: wA = 0, wB = 1)
+  const d = sub(s.B, s.A), L = len(d), C = L - s.L0, n = [d[0]/L, d[1]/L];
+  const soft = opt.scaleByH2 ? opt.alpha/(h*h) : opt.alpha;
+  const k = C * 1/(1 + soft);
+  s.B = [s.B[0] - k*n[0], s.B[1] - k*n[1]];
+  // ③ velocity
+  if (opt.correctVel !== false) s.v = [(s.B[0]-s.prev[0])/h, (s.B[1]-s.prev[1])/h];
+  if (opt.damp) { const f = Math.exp(-opt.damp*h); s.v = [s.v[0]*f, s.v[1]*f]; }
+}
+
+// ---------- chapters ----------
+let st = {}, anim = null, drag = null;
+const chapters = [
+
+{ kicker:'Chapter 1 · The idea', title:'A cloth is just dots and sticks', loop:[],
+  body:`<p>Forget fabric. A simulated cloth is a grid of <b>dots</b> (particles) joined by <b>sticks</b> (rules that say "these two dots should be L₀ apart").</p>
+        <p>For each stick we measure one number, the <b>error C</b>: how far it is from its rest length. <span style="color:var(--org)">Orange</span> means too long, <span style="color:var(--blu)">blue</span> means too short, grey means correct.</p>
+        <p class="hint">👉 Drag dot B around and watch C change.</p>`,
+  setup(){ st = {A:[0,0], B:[0.45,-1.15], L0:1}; view = {s:140, ox:W/2, oy:50}; },
+  draw(){
+    clear(); ring(st.A, st.L0); text('every point on this circle = C is 0', [0.72,-0.6], 'rgba(90,209,255,.7)');
+    stick(st.A, st.B, st.L0); dot(st.A, true, 'A (pinned)'); dot(st.B, false, 'B');
+    const C = len(sub(st.B, st.A)) - st.L0;
+    $('formula').innerHTML = `C = |B − A| − L₀\n<span class="live">C = ${n3(len(sub(st.B,st.A)))} − 1.000 = ${n3(C)}   ${C > 0.01 ? '→ stretched' : C < -0.01 ? '→ squashed' : '→ perfect'}</span>`;
+  },
+  draggable:['B'],
+  quiz:[
+    {q:'The rest length is L₀ = 1. You drag the dots so they are 0.7 apart. What is C?', opts:['+0.3','−0.3','0.7'], ans:1,
+     why:'C = 0.7 − 1 = −0.3. A negative C means the stick is too short (squashed). The sign tells you which way to push.'},
+    {q:'What is the goal of the whole simulation in one sentence?', opts:['Make C = 0 on every stick while gravity pulls the dots','Make every dot stop moving','Compute the force on every stick'], ans:0,
+     why:'Gravity moves the dots, and the sticks keep the cloth shape by pushing C back to 0. That loop is all a cloth simulation does.'}
+  ]},
+
+{ kicker:'Chapter 2 · Step ①', title:'Predict: move first, ignore the sticks', loop:[1],
+  body:`<p>Each substep starts with a guess. Pretend the sticks don't exist and let the dot fly with its velocity and gravity.</p>
+        <p>This guess is <b>allowed to be wrong</b>. We fix it in the next step. (Time step h is exaggerated to 0.15 s so the move is easy to see.)</p>`,
+  setup(){ st = {A:[0,0], B:[0.6,-0.8], v:[1.6,0], L0:1, h:0.15, done:false}; view = {s:140, ox:W/2-40, oy:50}; },
+  controls(){ return [btn('① Predict ▶', () => {
+      if (st.done) return; st.prev = [...st.B]; st.v0 = [...st.v];
+      st.v = [st.v[0], st.v[1] + g*st.h]; st.B = [st.B[0] + st.v[0]*st.h, st.B[1] + st.v[1]*st.h]; st.done = true; redraw(); }, true),
+    btn('Reset', () => { cur().setup(); redraw(); })]; },
+  draw(){
+    clear(); ring(st.A, st.L0);
+    if (st.done){ ghost(st.prev); arrow(st.prev, sub(st.B, st.prev), '#ffd166', 'guess move'); }
+    stick(st.A, st.B, st.L0); dot(st.A, true, 'A'); dot(st.B, false, 'B');
+    arrow(st.B, st.v, '#6ee7a0', 'v', 0.25);
+    const C = len(sub(st.B, st.A)) - st.L0;
+    $('formula').innerHTML = st.done
+      ? `v ← v + g·h      x ← x + v·h\n<span class="live">v = (${n3(st.v0[0])}, ${n3(st.v0[1])}) + (0, −9.81)·0.15 = (${n3(st.v[0])}, ${n3(st.v[1])})\nx = (${n3(st.prev[0])}, ${n3(st.prev[1])}) + v·0.15 = (${n3(st.B[0])}, ${n3(st.B[1])})\nC = ${n3(C)}  ← the guess broke the stick</span>`
+      : `v ← v + g·h      x ← x + v·h\n<span class="live">Press Predict. B moves along its velocity (green) plus gravity.</span>`;
+  },
+  quiz:[
+    {q:'Before pressing: B is on the circle and moving sideways. After Predict, the stick will be…', opts:['Exactly correct (C = 0)','Too long (C > 0)','Too short (C < 0)'], ans:1,
+     why:'Moving in a straight line off a circle always takes you outside it, and gravity pulls further away from A. So the guess stretches the stick. Step ② has to fix that.'},
+    {q:'Why does Predict skip pinned dots?', opts:['To save time','A pinned dot has infinite mass (w = 1/m = 0), so nothing can move it','Pinned dots have no velocity variable'], ans:1,
+     why:'We store w = 1/mass. A pin has w = 0, so gravity and corrections both get multiplied by 0. One number covers pinning everywhere.'}
+  ]},
+
+{ kicker:'Chapter 3 · Step ②', title:'Fix: push the dots back so C = 0', loop:[2],
+  body:`<p>Now look at each stick and <b>move its two dots along the stick</b> until the length is right again. Heavy dots move less and light dots move more. The weight we use is <b>w = 1/mass</b>.</p>
+        <p>Here the guess left the stick 0.3 too long. Choose who is pinned, then press Fix.</p>`,
+  setup(){ st = {A:[0,0], B:[0,-1.3], L0:1, wA: st.ch === 2 ? st.wA : 0, fixed:false, ch:2}; st.A0 = [...st.A]; st.B0 = [...st.B]; view = {s:150, ox:W/2, oy:60}; },
+  controls(){ return [
+    btn('A pinned (w=0)', () => { st.wA = 0; resetFix(); }, false, () => st.wA === 0),
+    btn('A free (w=1)', () => { st.wA = 1; resetFix(); }, false, () => st.wA === 1),
+    btn('② Fix ▶', () => {
+      if (st.fixed) return;
+      const d = sub(st.B, st.A), L = len(d), C = L - st.L0, n = [d[0]/L, d[1]/L], s = st.wA + 1;
+      st.C = C; st.dA = [ st.wA/s*C*n[0],  st.wA/s*C*n[1]]; st.dB = [-1/s*C*n[0], -1/s*C*n[1]];
+      st.A = [st.A[0]+st.dA[0], st.A[1]+st.dA[1]]; st.B = [st.B[0]+st.dB[0], st.B[1]+st.dB[1]]; st.fixed = true; redraw(); }, true),
+    btn('Reset', resetFix)]; },
+  draw(){
+    clear();
+    if (st.fixed){ ghost(st.A0); ghost(st.B0); arrow(st.B0, st.dB, '#ffd166', `B moves ${n3(len(st.dB))}`, 1); if (st.wA) arrow(st.A0, st.dA, '#ffd166', `A moves ${n3(len(st.dA))}`, 1); }
+    stick(st.A, st.B, st.L0); dot(st.A, st.wA === 0, `A  (w=${st.wA})`); dot(st.B, false, 'B  (w=1)');
+    const C = len(sub(st.B, st.A)) - st.L0, s = st.wA + 1;
+    $('formula').innerHTML = `each dot moves:   Δ = C · w_dot / (w_A + w_B)   along the stick\n<span class="live">` +
+      (st.fixed ? `C was ${n3(st.C)} → B moves ${n3(st.C)}·1/${s} = ${n3(st.C/s)},  A moves ${n3(st.C)}·${st.wA}/${s} = ${n3(st.C*st.wA/s)}\nnew C = ${n3(C)} ✔` : `C = ${n3(C)}  (too long). Press Fix.`) + '</span>';
+  },
+  quiz:[
+    {q:'Both dots are free (w = 1 each) and C = 0.2. How far does B move?', opts:['0.2','0.1','0.05'], ans:1,
+     why:'Δ_B = 0.2 · 1/(1+1) = 0.1. Equal weights split the fix half and half: A moves 0.1, B moves 0.1, and together they close the 0.2 gap.'},
+    {q:'A has w = 0.5 (it is 2× heavier) and B has w = 1. Who moves more?', opts:['A','B','They move the same'], ans:1,
+     why:'B gets 1/(0.5+1) = 2/3 of the fix and A gets 1/3. The lighter dot moves more, like pushing a truck and a bicycle apart.'},
+    {q:'A cloth has hundreds of sticks sharing dots. Fixing one stick can break its neighbour. What do solvers do?', opts:['Give up','Go through all sticks one by one and repeat the sweep a few times (or use more substeps)','Fix only the longest stick'], ans:1,
+     why:'Fixing sticks one after another is called Gauss–Seidel. Every sweep reduces the errors, and more iterations or substeps make the cloth stiffer and more exact.'}
+  ]},
+
+{ kicker:'Chapter 4 · Step ③', title:'Velocity: the move IS the velocity', loop:[3],
+  body:`<p>Step ② moved the dot, and that move is real motion. So we don't trust the velocity from step ①. We recompute it from where the dot actually went:</p>
+        <p><b>v = (x_now − x_before_predict) / h</b></p>
+        <p>Play the pendulum, then switch to the <b>naive</b> mode, which keeps v from step ①, and watch the speed number.</p>`,
+  setup(){ st = {A:[0,0], B:[0.8,-0.6], v:[0,0], L0:1, correct:true, trail:[]}; st.prev = [...st.B]; view = {s:140, ox:W/2, oy:50}; },
+  controls(){ return [
+    btn('▶ Play / Pause', () => toggleAnim(), true),
+    btn('Correct v', () => { st.correct = true; redraw(); }, false, () => st.correct),
+    btn('Naive v (skip step ③)', () => { st.correct = false; redraw(); }, false, () => !st.correct),
+    btn('Reset', () => { cur().setup(); redraw(); })]; },
+  tick(){ for (let i = 0; i < 2; i++) pendulumSubstep(st, 1/120, {alpha:0, scaleByH2:true, correctVel:st.correct}); st.trail.push([...st.B]); if (st.trail.length > 80) st.trail.shift(); },
+  draw(){
+    clear(); ring(st.A, st.L0);
+    ctx.fillStyle = 'rgba(255,209,102,.35)'; st.trail.forEach(p => { const q = S(p); ctx.fillRect(q[0]-1.5, q[1]-1.5, 3, 3); });
+    stick(st.A, st.B, st.L0); dot(st.A, true, 'A'); dot(st.B, false, 'B'); arrow(st.B, st.v, st.correct ? '#6ee7a0' : '#ff6b7a', 'v', 0.12);
+    const sp = len(st.v);
+    hud([[`speed |v| = ${sp.toFixed(2)} m/s`, st.correct ? '#6ee7a0' : (sp > 6 ? '#ff6b7a' : '#ffd166')],
+         [st.correct ? 'stays bounded: it can never beat the starting drop height' : 'naive: grows by g·h every step, forever']]);
+    $('formula').innerHTML = st.correct
+      ? `③  v = (x − prev) / h\n<span class="live">v = (${n3(st.v[0])}, ${n3(st.v[1])})  ← includes the push from the stick</span>`
+      : `③  (skipped. v is whatever Predict said)\n<span class="live" style="color:var(--red)">v = (${n3(st.v[0])}, ${n3(st.v[1])})  ← only gravity, the stick's push was thrown away</span>`;
+  },
+  quiz:[
+    {q:'In naive mode the dot ends up hanging still at the bottom, but the speed number keeps growing. Why?', opts:['Rendering bug','The stick keeps pulling the dot back, but that pull is never added to v, so v only ever gains gravity','Gravity is stronger in naive mode'], ans:1,
+     why:'Step ② undoes the movement, but v never learns about it. v grows by 9.81·h each step, and every Predict throws the dot further. Eventually the fix step can\'t keep up and the cloth stretches or explodes.'},
+    {q:'What does step ③ give us for free?', opts:['Collisions','The stick forces get turned into velocity without ever computing a force','Faster rendering'], ans:1,
+     why:'This is the trick of position-based dynamics. We never compute forces. We move positions, then read the velocity off the movement.'}
+  ]},
+
+{ kicker:'Chapter 5 · The "X" in XPBD', title:'Softness α: how stretchy is the stick?', loop:[2],
+  body:`<p>Until now every stick was perfectly rigid. Real cloth stretches a little. XPBD adds one number, <b>compliance α</b> (softness, which is 1 / stiffness), and fixes only <i>part</i> of the error:</p>
+        <p><b>Δ = C · w / (w + α / h²)</b></p>
+        <p>The <b>/ h²</b> part is what the "X" (extended) adds. Try changing h with it on, then turn it off.</p>`,
+  setup(){ st = {A:[0,0], B:[0,-1], v:[0,0], L0:1, alpha:0.02, h:1/60, scale:true, hist:[]}; st.prev = [...st.B]; view = {s:150, ox:W/2, oy:50}; },
+  controls(){ return [
+    rng('softness α', 0, 0.04, 0.002, () => st.alpha, v => { st.alpha = v; }, v => v.toFixed(3)),
+    btn('h = 1/30', () => setH(1/30), false, () => st.h === 1/30),
+    btn('h = 1/60', () => setH(1/60), false, () => st.h === 1/60),
+    btn('h = 1/240', () => setH(1/240), false, () => st.h === 1/240),
+    btn('/ h² ON (XPBD)', () => { st.scale = true; st.hist = []; redraw(); }, false, () => st.scale),
+    btn('/ h² OFF (old PBD)', () => { st.scale = false; st.hist = []; redraw(); }, false, () => !st.scale)]; },
+  autoplay:true,
+  tick(){ const n = Math.max(1, Math.round((1/60)/st.h)); for (let i = 0; i < n; i++) pendulumSubstep(st, st.h, {alpha:st.alpha, scaleByH2:st.scale, damp:3}); st.hist.push(len(sub(st.B, st.A)) - st.L0); if (st.hist.length > 60) st.hist.shift(); },
+  draw(){
+    clear(); ring(st.A, st.L0, 'rgba(160,170,190,.25)');
+    const rest = S([0,-1]); ctx.strokeStyle = '#5c667c'; ctx.setLineDash([3,4]); ctx.beginPath(); ctx.moveTo(rest[0]-60, rest[1]); ctx.lineTo(rest[0]+60, rest[1]); ctx.stroke(); ctx.setLineDash([]);
+    text('rest length', [0.42,-1], '#7a849a', 0, 4);
+    stick(st.A, st.B, st.L0, 5); dot(st.A, true, 'A'); dot(st.B, false, 'B');
+    const avg = st.hist.length ? st.hist.reduce((a,b) => a+b, 0)/st.hist.length : 0;
+    hud([[`stretch = ${(avg*100).toFixed(1)} cm`, '#ffd166'], [`expected for real softness α: ≈ g·α = ${(9.81*st.alpha*100).toFixed(1)} cm`]]);
+    const soft = st.scale ? st.alpha/(st.h*st.h) : st.alpha;
+    $('formula').innerHTML = `Δ = C · w / (w + ${st.scale ? 'α/h²' : 'α'})\n<span class="live">${st.scale ? `α/h² = ${st.alpha.toFixed(3)} / (${(1/st.h).toFixed(0)}⁻¹)² = ${soft.toFixed(2)}` : `α = ${soft.toFixed(3)}  (no h², so softness depends on the frame rate)`}\nonly ${(100/(1+soft)).toFixed(1)}% of the error is fixed each step</span>`;
+  },
+  quiz:[
+    {q:'You set α = 0. What kind of stick is that?', opts:['Infinitely soft','Perfectly rigid: Δ = C·w/w = C, so the full error is fixed','Broken'], ans:1,
+     why:'With α = 0 the formula becomes Δ = C, which fixes 100% of the error. That is exactly the rigid stick from chapter 3. XPBD contains rigid sticks as a special case.'},
+    {q:'With "/ h² OFF", what happened to the stretch when you changed h, or moved the α slider?', opts:['Nothing changes, so it works fine','The stick is almost rigid whatever α is, and it changes with h, so softness depends on frame rate','It explodes'], ans:1,
+     why:'Old PBD tied stiffness to the time step and iteration count. A cloth tuned at 60 fps felt different at 120 fps. Dividing by h² makes α a real physical softness that stays the same at any frame rate. That is the whole point of XPBD.'}
+  ]},
+
+{ kicker:'Chapter 6 · All together', title:'A real cloth: the same 3 steps, many sticks', loop:[1,2,3],
+  body:`<p>This is the same loop: <b>① predict</b> every dot, <b>② fix</b> every stick (one after another), and <b>③ recompute v</b>. It runs 10 substeps per frame.</p>
+        <p class="hint">👉 Drag any dot. Raise α to make it stretchy, and set it to 0 for stiff.</p>`,
+  setup(){
+    const cols = 9, rows = 7, sp = 0.18, x0 = -(cols-1)*sp/2;
+    const P = [], E = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++){
+      const p = [x0 + c*sp, -r*sp]; P.push({x:p, prev:[...p], v:[0,0], w:(r === 0 && (c === 0 || c === cols-1 || c === 4)) ? 0 : 1});
+      if (c) E.push([r*cols+c-1, r*cols+c, sp]); if (r) E.push([(r-1)*cols+c, r*cols+c, sp]);
+    }
+    st = {P, E, alpha:0.0002}; view = {s:220, ox:W/2, oy:40};
+  },
+  controls(){ return [
+    rng('softness α', 0, 0.002, 0.0001, () => st.alpha, v => { st.alpha = v; }, v => v.toFixed(4)),
+    btn('Reset', () => { cur().setup(); redraw(); })]; },
+  autoplay:true, draggable:'cloth',
+  tick(){
+    const subs = 10, h = (1/60)/subs, at = st.alpha/(h*h);
+    for (let s = 0; s < subs; s++){
+      for (const p of st.P){ p.prev = [...p.x]; if (p.w === 0 || p === drag?.p) continue; p.v[1] += g*h; p.x = [p.x[0]+p.v[0]*h, p.x[1]+p.v[1]*h]; }
+      for (const [a, b, L0] of st.E){
+        const A = st.P[a], B = st.P[b], wa = (A === drag?.p) ? 0 : A.w, wb = (B === drag?.p) ? 0 : B.w;
+        const d = sub(A.x, B.x), L = len(d); if (L < 1e-9 || wa + wb === 0) continue;
+        const C = L - L0, k = C/(wa + wb + at), n = [d[0]/L, d[1]/L];
+        A.x = [A.x[0] - wa*k*n[0], A.x[1] - wa*k*n[1]]; B.x = [B.x[0] + wb*k*n[0], B.x[1] + wb*k*n[1]];
+      }
+      for (const p of st.P){ p.v = [(p.x[0]-p.prev[0])/h, (p.x[1]-p.prev[1])/h]; }
+    }
+  },
+  draw(){
+    clear();
+    for (const [a, b, L0] of st.E) stick(st.P[a].x, st.P[b].x, L0, 2);
+    for (const p of st.P){ const q = S(p.x); ctx.fillStyle = p.w === 0 ? '#c3cbdb' : '#e8ebf2'; ctx.beginPath(); ctx.arc(q[0], q[1], p.w === 0 ? 6 : 3.5, 0, 7); ctx.fill(); }
+    $('formula').innerHTML = `per substep:\n  ① for each dot:   v += g·h;  prev = x;  x += v·h\n  ② for each stick: C = |xa − xb| − L₀;  move both by C·w/(wa + wb + α/h²)\n  ③ for each dot:   v = (x − prev) / h\n<span class="live">${st.P.length} dots · ${st.E.length} sticks · 10 substeps/frame · α = ${st.alpha.toFixed(4)}</span>`;
+  },
+  quiz:[
+    {q:'You drag one dot fast. Which step makes its neighbours follow?', opts:['① Predict','② Fix: the sticks connected to it get long, so their other ends are pulled along','③ Velocity'], ans:1,
+     why:'The dragged dot acts like a pin (w = 0) while you hold it. Its sticks stretch, step ② pulls the neighbours, and their sticks stretch in turn. Then step ③ turns those moves into velocity, which is why the cloth keeps swinging after you let go.'},
+    {q:'Your cloth looks too stretchy in a game. Which is the XPBD way to fix it?', opts:['Lower α (make the sticks stiffer)','Increase dt','Remove step ③'], ans:0,
+     why:'α is the softness knob, and because of the /h² it means the same at any frame rate. More substeps also help, because they let the solver reach the stiffness you asked for.'},
+    {q:'Put the substep in order:', opts:['Fix sticks → Predict → Velocity','Predict → Fix sticks → Velocity','Velocity → Predict → Fix sticks'], ans:1,
+     why:'Guess the move, correct the shape, and then read the real velocity from the result. If you can explain those three steps, you understand XPBD cloth.'}
+  ]},
+];
+
+// ---------- UI glue ----------
+let idx = 0;
+const cur = () => chapters[idx];
+function btn(label, fn, main, isSel){ return {label, fn, main, isSel}; }
+function rng(label, min, max, step, get, set, fmt){ return {range:true, label, min, max, step, get, set, fmt}; }
+function setH(h){ st.h = h; st.hist = []; redraw(); }
+function resetFix(){ st.A = [...st.A0]; st.B = [...st.B0]; st.fixed = false; redraw(); }
+
+function renderControls(){
+  const box = $('controls'); box.innerHTML = '';
+  const list = cur().controls ? cur().controls() : [];
+  for (const c of list){
+    if (c.range){
+      const l = document.createElement('label'); l.className = 'rng';
+      l.innerHTML = `${c.label} <input type="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.get()}"> <b>${c.fmt(c.get())}</b>`;
+      const inp = l.querySelector('input'), b = l.querySelector('b');
+      inp.oninput = () => { c.set(+inp.value); b.textContent = c.fmt(+inp.value); redraw(); };
+      box.appendChild(l);
+    } else {
+      const b = document.createElement('button'); b.textContent = c.label;
+      if (c.main) b.className = 'main';
+      if (c.isSel && c.isSel()) b.classList.add('sel');
+      b.onclick = () => { c.fn(); renderControls(); };
+      box.appendChild(b);
+    }
+  }
+}
+function renderQuiz(){
+  const q = $('quiz'); q.innerHTML = '<h3>🧠 Check yourself (guess before you click)</h3>';
+  cur().quiz.forEach(item => {
+    const d = document.createElement('div'); d.className = 'q';
+    d.innerHTML = `<p>${item.q}</p><div class="opts"></div><div class="why"></div>`;
+    const opts = d.querySelector('.opts'), why = d.querySelector('.why');
+    item.opts.forEach((o, i) => {
+      const b = document.createElement('button'); b.textContent = o;
+      b.onclick = () => {
+        opts.querySelectorAll('button').forEach((x, j) => { x.classList.remove('right','wrong'); if (j === item.ans) x.classList.add('right'); });
+        if (i !== item.ans) b.classList.add('wrong');
+        why.innerHTML = (i === item.ans ? '✅ Right. ' : '❌ Not quite. ') + item.why; why.classList.add('show');
+      };
+      opts.appendChild(b);
+    });
+    q.appendChild(d);
+  });
+}
+function redraw(){ cur().draw(); }
+function toggleAnim(force){
+  const on = force !== undefined ? force : !anim;
+  if (anim){ cancelAnimationFrame(anim); anim = null; }
+  if (on){ const run = () => { cur().tick(); redraw(); anim = requestAnimationFrame(run); }; anim = requestAnimationFrame(run); }
+}
+function go(i){
+  toggleAnim(false);
+  idx = Math.max(0, Math.min(chapters.length-1, i));
+  const c = cur();
+  $('kicker').textContent = c.kicker; $('title').textContent = c.title; $('body').innerHTML = c.body;
+  document.querySelectorAll('#loop .box').forEach(b => b.classList.toggle('on', c.loop.includes(+b.dataset.s)));
+  $('prog').innerHTML = chapters.map((_, j) => `<i class="${j === idx ? 'on' : j < idx ? 'done' : ''}"></i>`).join('');
+  $('back').disabled = idx === 0; $('fwd').textContent = idx === chapters.length-1 ? 'Done ✔' : 'Next chapter →';
+  resize(); c.setup(); renderControls(); renderQuiz(); redraw();
+  if (c.autoplay) toggleAnim(true);
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+$('back').onclick = () => go(idx-1);
+$('fwd').onclick = () => go(idx+1);
+window.addEventListener('resize', () => { resize(); redraw(); });
+
+// dragging (chapter 1: dot B; chapter 6: nearest cloth dot)
+function ptr(e){ const r = cv.getBoundingClientRect(); return toW(e.clientX - r.left, e.clientY - r.top); }
+cv.addEventListener('pointerdown', e => {
+  const c = cur(), m = ptr(e);
+  if (c.draggable === 'cloth'){
+    let best = null, bd = 0.12;
+    for (const p of st.P){ const d = len(sub(p.x, m)); if (d < bd && p.w !== 0){ bd = d; best = p; } }
+    if (best){ drag = {p:best}; cv.setPointerCapture(e.pointerId); }
+  } else if (c.draggable && len(sub(st.B, m)) < 0.2){ drag = {key:'B'}; cv.setPointerCapture(e.pointerId); }
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) return; const m = ptr(e);
+  if (drag.p){ drag.p.x = m; drag.p.v = [0,0]; } else { st.B = m; redraw(); }
+});
+cv.addEventListener('pointerup', () => { drag = null; });
+
+go(0);
+</script>
+</body>
+</html>
