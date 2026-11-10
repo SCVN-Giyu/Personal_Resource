@@ -29,6 +29,12 @@ Before building anything, distinguish **learning a concept** from **auditing exi
 
 *If the user's intent is ambiguous, default to **Guided Lesson Mode** (and optionally include a sandbox/lab in the final chapter).*
 
+### Specimen Rule: Never Teach the Code's Behavior as Truth
+- When teaching from an existing codebase, the code is a **specimen to be judged**, not the reference. Its bugs must not become lesson content.
+- Happy-path chapters must come from a cited reference (paper, talk, official docs). Mark code-only observations as `📄 Observed in code (file:line)` and never present them as "how it works".
+- Break chapters must come from **reproduced** failures, framed as: *"This code does X. The reference says Y. Here is the reproduced failure."*
+- If a `study-and-harden` Concept Dossier exists, use **it** as the lesson input instead of the raw code, and carry its provenance labels (📚 / 🔬 / 📄 / ❓) into the page.
+
 ---
 
 ## Mode A: Guided Lesson Mode (How Understanding Builds Up)
