@@ -169,6 +169,55 @@ When the user wants **actual runtime pain** inside Unity rather than just static
 
 ---
 
+## Direct Luna Build Browser Fuzzing (`scripts/run_luna_chaos.mjs` + `@playwright/mcp`)
+
+Why rare bugs escape normal chaos checks on exported Luna builds:
+1. **Unseeded randomness:** Every run picks a different `Math.random()` sequence and click timing, so a 1-in-50 race condition cannot be replayed once seen.
+2. **Smooth desktop frame timing:** Normal browser testing runs at a steady 60fps (`16.6ms`), missing mobile WebGL tab-switch spikes (`250ms–450ms`) or micro-frame jitter (`2ms`) that break coroutine chains and physics adapters.
+3. **Silent state corruption:** Game state desyncs (e.g., negative target count, stuck transition lock, NaN positions) without throwing a JS exception, until a secondary symptom appears seconds later.
+
+### 1. Automated Multi-Seed Chaos Sweep (`run_luna_chaos.mjs`)
+
+Use [`scripts/run_luna_chaos.mjs`](scripts/run_luna_chaos.mjs) to run N deterministic, seeded chaos sessions against any exported Luna HTML build (single-file HTML, directory with `index.html`, or localhost URL):
+
+```bash
+# Run 30 seeded chaos sessions (160 chaos frames each) against an exported Luna build
+node "<SKILL_DIR>/scripts/run_luna_chaos.mjs" /path/to/luna_build/index.html --runs 30 --frames 160
+
+# Replay a specific failing seed visually in a headed browser window
+node "<SKILL_DIR>/scripts/run_luna_chaos.mjs" /path/to/luna_build/index.html --seed 133742 --headed --frames 160
+```
+
+**What `run_luna_chaos.mjs` injects before Luna boots (`page.addInitScript`):**
+- **Deterministic PRNG (`Mulberry32`):** Overrides `Math.random()` with the run's seed so every random branch inside Luna and the chaos monkey is 100% reproducible.
+- **Virtual Time-Warp Spikes (`__CHAOS_ADVANCE_TIME__`):** Wraps `performance.now()` and `Date.now()` so the runner injects synthetic `200ms–450ms` frame-time lag spikes and `2ms` micro-frames during active gameplay and transitions.
+- **Seeded Input & Viewport Chaos:** Executes reproducible sequences of rapid multi-tap bursts, pointer drags with 25% mid-drag interruption, and `390x844` (Portrait) $\leftrightarrow$ `844x390` (Landscape) viewport flips.
+- **Zero-Tolerance Error & Canary Trap:** Fails immediately on `window.onerror`, `unhandledrejection`, `console.error`, suspicious logs (`is not a function`, `NaN`, `RuntimeError`, `NullReferenceException`), or custom invariant violations, dumping a JSON flight-recorder trace + screenshot + exact `--seed` replay command.
+
+### 2. Optional: Exposing a Game-State Canary (`window.__CHAOS_INVARIANTS__`)
+
+To catch **silent softlocks or state desyncs** immediately on the exact action that caused them (instead of waiting for a crash), expose a tiny canary hook in your Luna build or test wrapper:
+
+```javascript
+// Returns null/true if healthy, or a string/array describing any broken invariant
+window.__CHAOS_INVARIANTS__ = function () {
+  const issues = [];
+  if (window.GameDebug) {
+    if (window.GameDebug.remainingTargets < 0) issues.push("remainingTargets < 0");
+    if (window.GameDebug.isTransitioning && window.GameDebug.inputEnabled) {
+      issues.push("inputEnabled is true while isTransitioning is active");
+    }
+  }
+  return issues;
+};
+```
+
+### 3. Interactive Browser Inspection via `@playwright/mcp`
+
+When a seed fails (or when you want to inspect the live DOM/WebGL console interactively), use the **`playwright` MCP server** (`@playwright/mcp`) to open the build URL, evaluate live JS state in the page context, inspect console/network logs, and verify the fix.
+
+---
+
 ## Red Flags (Anti-Patterns in Doubt-Driven Development)
 
 - **Rubber-Stamping Happy Paths:** Claiming code is "safe" just because it compiles in C# without checking Luna Bridge C# 7.3 / JS adapter parity.

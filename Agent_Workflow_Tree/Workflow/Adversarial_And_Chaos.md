@@ -15,6 +15,7 @@ Before a non-trivial implementation, state machine, or bug fix stands, subject i
     4. **Mid-Lifecycle Destruction** (stage reloads while objects sink, explode, or tween; no `?.` on `UnityEngine.Object`)
     5. **Domain Reload Disabled Static Bleed** (`SubsystemRegistration` resets)
     6. **Counter & Boundary Invariants** (`<= 0` one-shot win latches, Command Down / Event Up)
+  - **Direct Luna Build Browser Chaos (Rare Timing / Race Bugs):** When testing an exported Luna HTML build, run the seeded Playwright chaos fuzzer ([run_luna_chaos.mjs](../../Agent_Skills/gemini/playable-doubt-driven-development/scripts/run_luna_chaos.mjs)) across multiple seeds (`--runs 30`) and use the `playwright` MCP server (`@playwright/mcp`) to replay and inspect any failing `--seed <N>` deterministically.
 
 - **If in a Personal / Non-Playable Project:**
   - Read [doubt-driven-development](../../Agent_Skills/gemini/doubt-driven-development/SKILL.md).

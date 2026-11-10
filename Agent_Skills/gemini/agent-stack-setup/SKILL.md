@@ -2,7 +2,7 @@
 name: agent-stack-setup
 description: >-
   Bootstrap, sync, or verify the portable Agent Stack (Agent_Workflow_Tree, Playable_Operational_Rules,
-  shared skills, and MCP servers: agentmemory, serena, roslyn-mcp, context7, sequential-thinking)
+  shared skills, and MCP servers: agentmemory, serena, roslyn-mcp, context7, sequential-thinking, playwright)
   on a new or existing machine across Antigravity/Gemini, Claude Code, Cursor, and Codex. Also initializes
   project-level AGENTS.md files for Playable Luna, Unity, or General projects.
 ---
@@ -46,7 +46,7 @@ python3 -I "<SKILL_DIR>/scripts/setup_agent_stack.py" --install-tools
 2. **Global Skill Symlinks**:
    - Links `~/.gemini/antigravity-cli/skills`, `~/.gemini/config/skills`, `~/.claude/skills`, `~/.codex/skills/gemini`, and `~/.agents/skills/*` directly to `<REPO_ROOT>/Agent_Skills/gemini`.
 3. **MCP Server Configs**:
-   - Wires `agentmemory`, `serena`, `roslyn-mcp`, `context7`, and `sequential-thinking` into `~/.gemini/config/mcp_config.json`, `~/.cursor/mcp.json`, and `~/.codex/config.toml` (preserving existing project entries like `ai-game-developer` or `unityMCP`).
+   - Wires `agentmemory`, `serena`, `roslyn-mcp`, `context7`, `sequential-thinking`, and `playwright` (`@playwright/mcp`) into `~/.gemini/config/mcp_config.json`, `~/.cursor/mcp.json`, and `~/.codex/config.toml` (preserving existing project entries like `ai-game-developer` or `unityMCP`).
 
 ---
 

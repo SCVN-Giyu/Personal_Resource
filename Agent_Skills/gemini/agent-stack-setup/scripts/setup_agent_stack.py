@@ -201,6 +201,10 @@ def update_json_mcp_config(
             "command": "npx",
             "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
         },
+        "playwright": {
+            "command": "npx",
+            "args": ["-y", "@playwright/mcp"],
+        },
     }
 
     changed = False
@@ -232,6 +236,9 @@ def update_codex_toml_mcp(path: Path, roslyn_bin: str, dry_run: bool) -> str:
         ),
         "[mcp_servers.sequential-thinking]": (
             '[mcp_servers.sequential-thinking]\ncommand = "npx"\nargs = [ "-y", "@modelcontextprotocol/server-sequential-thinking" ]\n'
+        ),
+        "[mcp_servers.playwright]": (
+            '[mcp_servers.playwright]\ncommand = "npx"\nargs = [ "-y", "@playwright/mcp" ]\n'
         ),
     }
 
